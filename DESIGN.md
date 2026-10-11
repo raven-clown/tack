@@ -415,8 +415,8 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Release binaries (v0.6) | Built when a release is published, from plain `go build` in a workflow, and attached with checksums | No extra tooling to configure, and the maintainer keeps writing the release notes |
 | Query scanning (v0.6.1) | The raw query is scanned per bound field, skipping what `url.ParseQuery` skips, instead of building the map | A route binds a few names; a map of every pair is work and allocations thrown away each request |
 | Pooled inputs and encoders (v0.6.1) | One `sync.Pool` of the input struct per route and one of JSON encoders app-wide; the handler gets a copy of the input | Binding needs a pointer, which would otherwise heap-allocate every request; a copy keeps handlers free of aliasing rules |
-| Compiled checks (v0.7) | Simple rules on scalar parameters compile to comparisons at registration; anything else keeps the validator, and a test holds both to the same messages | The validator's reflective walk was a third of a bound route's cost, and most parameters only need min, max, required, or oneof; falling back rather than reimplementing the validator keeps every rule working |
-| Shared `Content-Type` slice (v0.7) | The header value is one shared slice with length equal to capacity | `Header().Set` canonicalizes the key and allocates on every response; a full slice is safe to share because `Add` must copy it |
+| Compiled checks (v0.6.2) | Simple rules on scalar parameters compile to comparisons at registration; anything else keeps the validator, and a test holds both to the same messages | The validator's reflective walk was a third of a bound route's cost, and most parameters only need min, max, required, or oneof; falling back rather than reimplementing the validator keeps every rule working |
+| Shared `Content-Type` slice (v0.6.2) | The header value is one shared slice with length equal to capacity | `Header().Set` canonicalizes the key and allocates on every response; a full slice is safe to share because `Add` must copy it |
 
 ## Prototype
 

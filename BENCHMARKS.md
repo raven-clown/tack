@@ -14,7 +14,7 @@ The benchmarks write to a `ResponseWriter` that discards its output, so they mea
 
 Go 1.26, Linux, one core, 8 runs; the median run is shown. Each column is the same benchmark on that release.
 
-| Benchmark | v0.6.0 | v0.6.1 | Unreleased |
+| Benchmark | v0.6.0 | v0.6.1 | v0.6.2 |
 | --- | --- | --- | --- |
 | `net/http` handler writing `{}` | 285 ns, 18 B, 2 allocs | 285 ns, 18 B, 2 allocs | 285 ns, 18 B, 2 allocs |
 | tack, empty input and output | 425 ns, 24 B, 2 allocs | 450 ns, 16 B, 1 alloc | 270 ns, 0 B, 0 allocs |
@@ -30,7 +30,7 @@ v0.6.1:
 - Each route pools its input struct, so binding and validation, which need a pointer, no longer move every request's input to the heap. The handler receives a copy, so nothing is shared.
 - Responses are encoded into a pooled buffer by a pooled `json.Encoder` instead of `json.Marshal`.
 
-Unreleased:
+v0.6.2:
 
 - A route whose `validate` tags are all simple rules on scalar parameters runs compiled checks, one comparison per rule, instead of the validator's reflective walk. Bodies with rules, slices, and rules the compiler does not know keep the validator, and a test holds both to the same errors.
 - The `Content-Type` header is a shared slice whose length equals its capacity, so a later `Header.Add` copies instead of writing into it.

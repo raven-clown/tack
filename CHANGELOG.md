@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-11
+
 ### Changed
 
 - Routes whose `validate` tags are all simple rules on scalar parameters (`required`, `omitempty`, `min`, `max`, `gte`, `lte`, `gt`, `lt`, `len`, `eq`, `oneof`) run compiled checks instead of the validator; bodies with rules, slices, and other rules keep the validator, and both produce the same errors. The `Content-Type` header is set without canonicalizing or allocating, and inputs with nothing to bind skip the input pool. An empty handler now allocates nothing and costs less than plain `net/http` setting its own header; a route with a path value, a query value, a default, and validation takes about 650 ns and one allocation, down from 1690 ns and ten in v0.6.0. See BENCHMARKS.md.
@@ -137,7 +139,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/raven-clown/tack/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/raven-clown/tack/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/raven-clown/tack/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/raven-clown/tack/compare/v0.4.0...v0.5.0
