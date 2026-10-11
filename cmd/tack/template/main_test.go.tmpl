@@ -1,0 +1,67 @@
+package main
+
+import (
+	"flag"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/raven-clown/tack/openapi"
+	"github.com/raven-clown/tack/tsgen"
+)
+
+var update = flag.Bool("update", false, "regenerate the files under client/")
+
+func TestItems(t *testing.T) {
+	app := newApp()
+	steps := []struct {
+		method, url, body string
+		wantStatus        int
+		wantBody          string
+	}{
+		{"POST", "/items", `{"name":"first"}`, 201, `{"id":1,"name":"first"}`},
+		{"POST", "/items", `{"name":""}`, 422, `"code":"validation_failed"`},
+		{"GET", "/items", "", 200, `[{"id":1,"name":"first"}]`},
+		{"GET", "/items/1", "", 200, `{"id":1,"name":"first"}`},
+		{"GET", "/items/9", "", 404, `"code":"item_not_found"`},
+		{"DELETE", "/items/1", "", 204, ``},
+	}
+	for _, s := range steps {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(s.method, s.url, strings.NewReader(s.body)))
+		if rec.Code != s.wantStatus || !strings.Contains(rec.Body.String(), s.wantBody) {
+			t.Fatalf("%s %s: got %d %s\nwant %d containing %s", s.method, s.url, rec.Code, rec.Body, s.wantStatus, s.wantBody)
+		}
+	}
+}
+
+// TestClient fails when the TypeScript client or the Zod schemas are older
+// than the routes. Regenerate them with: go test . -update
+func TestClient(t *testing.T) {
+	files := []struct {
+		path     string
+		generate func(*openapi.Document) ([]byte, error)
+		check    func(*openapi.Document, string) error
+	}{
+		{"client/api.ts", tsgen.Generate, tsgen.Check},
+		{"client/schemas.ts", tsgen.GenerateZod, tsgen.CheckZod},
+	}
+	for _, f := range files {
+		if *update {
+			ts, err := f.generate(newApp().OpenAPI())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll("client", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(f.path, ts, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := f.check(newApp().OpenAPI(), f.path); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

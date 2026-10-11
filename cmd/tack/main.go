@@ -8,6 +8,8 @@
 //	tack check -spec <file|url|-> [-zod] api.ts
 //	tack dev [-spec http://localhost:8080/openapi.json] [-o api.ts] [-zod schemas.ts] [-dir .] [-- command...]
 //	tack mock -spec <file|url|-> [-addr 127.0.0.1:8081]
+//	tack new <dir> [-module path]
+//	tack version
 //
 // gen ts writes the client for the document to -o, or to standard output;
 // gen zod writes Zod schemas with the server's validation rules. check exits
@@ -24,6 +26,9 @@
 // mock serves every operation in the document with example responses and
 // cross-origin headers, so a frontend can be built before the API runs.
 // A request with a Prefer: code=404 header gets that documented error.
+//
+// new creates a runnable project: one resource with typed errors, graceful
+// shutdown, a README, and a test that regenerates and checks the client.
 //
 // An app can also check its files in a test with tsgen.Check and
 // tsgen.CheckZod, with no running server or exported document.
@@ -67,6 +72,8 @@ func usage(w io.Writer) {
                                                     Build, run, and regenerate on every save
   tack mock -spec <file|url|-> [-addr 127.0.0.1:8081]
                                                     Serve example responses for the document
+  tack new <dir> [-module path]                     Create a project with an API and a client test
+  tack version                                      Print the version
 
 The OpenAPI document is read from a file, a URL such as
 http://localhost:8080/openapi.json, or standard input with "-".
@@ -88,6 +95,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = devCmd(ctx, args[1:], stdout, stderr)
 	case "mock":
 		err = mockCmd(ctx, args[1:], stdin, stdout)
+	case "new":
+		err = newCmd(args[1:], stdout)
+	case "version", "-v", "--version":
+		fmt.Fprintf(stdout, "tack %s\n", versionString())
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0

@@ -1,0 +1,124 @@
+// Command {{.Name}} is an HTTP API built with tack.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"slices"
+	"sync"
+	"syscall"
+
+	"github.com/raven-clown/tack"
+)
+
+// ErrItemNotFound is returned when no item has the requested ID. Routes that
+// can return it declare it with tack.Errors, so it appears in the docs and
+// the generated client.
+var ErrItemNotFound = tack.DefineError(http.StatusNotFound, "item_not_found", "item not found")
+
+// Item is something the API stores.
+type Item struct {
+	ID   int    `json:"id"`
+	Name string `json:"name" validate:"required,max=100"`
+}
+
+// ItemInput is the writable part of an Item.
+type ItemInput struct {
+	Name string `json:"name" validate:"required,max=100"`
+}
+
+type listInput struct {
+	Limit int `query:"limit" default:"20" validate:"min=1,max=100" doc:"Maximum number of items"`
+}
+
+type idInput struct {
+	ID int `path:"id" validate:"min=1" doc:"Item ID"`
+}
+
+type createInput struct {
+	Body ItemInput
+}
+
+// createOutput adds a Location header to the created item.
+type createOutput struct {
+	Location string `header:"Location" doc:"URL of the new item"`
+	Body     Item
+}
+
+type store struct {
+	mu     sync.Mutex
+	items  map[int]Item
+	nextID int
+}
+
+func (s *store) list(_ context.Context, in listInput) ([]Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]Item, 0, len(s.items))
+	for _, it := range s.items {
+		items = append(items, it)
+	}
+	slices.SortFunc(items, func(a, b Item) int { return a.ID - b.ID })
+	if len(items) > in.Limit {
+		items = items[:in.Limit]
+	}
+	return items, nil
+}
+
+func (s *store) get(_ context.Context, in idInput) (Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.items[in.ID]
+	if !ok {
+		return Item{}, ErrItemNotFound.WithDetail(fmt.Sprintf("item %d not found", in.ID))
+	}
+	return it, nil
+}
+
+func (s *store) create(_ context.Context, in createInput) (createOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	it := Item{ID: s.nextID, Name: in.Body.Name}
+	s.items[it.ID] = it
+	return createOutput{Location: fmt.Sprintf("/items/%d", it.ID), Body: it}, nil
+}
+
+func (s *store) delete(_ context.Context, in idInput) (struct{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.items[in.ID]; !ok {
+		return struct{}{}, ErrItemNotFound
+	}
+	delete(s.items, in.ID)
+	return struct{}{}, nil
+}
+
+func newApp() *tack.App {
+	s := &store{items: map[int]Item{}}
+	app := tack.New(tack.Config{Title: "{{.Title}}", Version: "0.1.0"})
+	items := app.Group("/items").With(tack.Tags("items"))
+	one := items.With(tack.Errors(ErrItemNotFound))
+	tack.Get(items, "", s.list, tack.Summary("List items"))
+	tack.Post(items, "", s.create, tack.Summary("Create an item"), tack.Status(http.StatusCreated))
+	tack.Get(one, "/{id}", s.get, tack.Summary("Get an item"))
+	tack.Delete(one, "/{id}", s.delete, tack.Summary("Delete an item"), tack.Status(http.StatusNoContent))
+	return app
+}
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	addr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
+	fmt.Printf("{{.Name}}: docs at http://localhost%s/docs\n", addr)
+	if err := newApp().Run(ctx, addr); err != nil {
+		log.Fatal(err)
+	}
+}

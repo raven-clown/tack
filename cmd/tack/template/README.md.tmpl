@@ -1,0 +1,12 @@
+# {{.Title}}
+
+An HTTP API built with [tack](https://github.com/raven-clown/tack).
+
+```bash
+go run .                 # serves http://localhost:8080, docs at /docs
+go test .                # fails when client/ is older than the routes
+go test . -update        # regenerates client/api.ts and client/schemas.ts
+tack dev -o client/api.ts -zod client/schemas.ts   # rebuild on every save
+```
+
+`client/api.ts` is a dependency-free TypeScript client; `client/schemas.ts` holds Zod schemas with the same validation rules.
