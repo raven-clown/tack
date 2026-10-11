@@ -33,7 +33,7 @@ type rule struct {
 // compileChecks returns the checks for t's parameters, or false when the
 // input needs the validator: a body with rules, a slice, a struct, an
 // unknown rule, or a parameter that does not parse.
-func compileChecks(t reflect.Type, plan *bind.Plan) ([]check, bool) {
+func compileChecks(plan *bind.Plan) ([]check, bool) {
 	if f, _, ok := plan.Body(); ok && hasValidateTags(f.Type, map[reflect.Type]bool{}) {
 		return nil, false
 	}

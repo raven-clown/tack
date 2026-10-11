@@ -40,7 +40,7 @@ func TestChecksMatchValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checks, ok := compileChecks(typ, plan)
+	checks, ok := compileChecks(plan)
 	if !ok || len(checks) != 13 {
 		t.Fatalf("compileChecks: ok %v, %d checks", ok, len(checks))
 	}
@@ -118,7 +118,7 @@ func TestCompileChecksFallsBack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			checks, ok := compileChecks(tt.typ, plan)
+			checks, ok := compileChecks(plan)
 			if ok != tt.ok || len(checks) != tt.n {
 				t.Fatalf("ok %v with %d checks, want %v with %d", ok, len(checks), tt.ok, tt.n)
 			}

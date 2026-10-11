@@ -187,7 +187,7 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
 	check := hasValidateTags(t, map[reflect.Type]bool{})
-	checks, compiled := compileChecks(t, plan)
+	checks, compiled := compileChecks(plan)
 	if compiled && len(checks) == 0 {
 		check = false // nothing to validate at all
 	}

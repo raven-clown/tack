@@ -110,6 +110,8 @@ Validation is delegated to `go-playground/validator/v10`, wrapped so that:
 - locations are reported as `body.name`, `query.page`, `path.id`,
 - messages are human-readable.
 
+A route whose `validate` tags are all simple rules (`required`, `omitempty`, `min`, `max`, `gte`, `lte`, `gt`, `lt`, `len`, `eq`, `oneof`) on scalar parameters does not call the validator at all: `compileChecks` turns the tags into comparisons at registration and `runChecks` runs them per request, reporting the first failing rule of each field with the same messages. A body with rules, a slice, a pointer to a struct with anything but `required`, or an unknown rule makes the whole input fall back to the validator, so every rule it supports keeps working.
+
 ### Streams
 
 `Stream[T]` is a named function type, `func(yield func(T) bool)`, so it is both an iterator and a type with methods: every instantiation implements an unexported interface with `serve`, which the route calls through a type assertion, not reflection. `serve` sets `text/event-stream`, flushes the headers, then drives the iterator, writing `data:` (and `event:`/`id:` for `Event[T]`) lines and flushing after each event. It stops when the request context is done or a write fails, and `yield` returns false so the producer's loop ends too. An encoding failure cannot become a problem response once the stream is open, so it is sent as an `error` event. At registration, `newOutput` records the item type (the `Data` type for `Event[T]`), which the document uses as the response schema; a `Stream` inside an output wrapper is rejected.
