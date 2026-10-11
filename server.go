@@ -9,14 +9,10 @@ import (
 	"time"
 )
 
-// ShutdownTimeout is how long Run and Serve wait for in-flight requests
-// after ctx is done.
-const ShutdownTimeout = 10 * time.Second
-
 // Run serves the app on addr until ctx is done, then stops accepting
 // connections, cancels the context of every request still running (which
-// ends open streams), and waits up to ShutdownTimeout for handlers to finish.
-// It returns nil after a clean shutdown. The server reads headers with a 10
+// ends open streams), and waits up to Config.ShutdownTimeout for handlers to
+// finish. It returns nil after a clean shutdown. The server reads headers with a 10
 // second limit and closes idle connections after two minutes; it sets no
 // limit on request or response bodies, so uploads and streams are not cut
 // off. Use Serve to configure the server yourself.
@@ -67,7 +63,7 @@ func (a *App) Serve(ctx context.Context, srv *http.Server) error {
 		return err
 	case <-ctx.Done():
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.shutdown)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	if serveErr := <-served; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {

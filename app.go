@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 
@@ -12,7 +13,10 @@ import (
 	"github.com/raven-clown/tack/openapi"
 )
 
-const defaultMaxBodyBytes = 1 << 20
+const (
+	defaultMaxBodyBytes    = 1 << 20
+	defaultShutdownTimeout = 10 * time.Second
+)
 
 // Config configures an App.
 type Config struct {
@@ -40,6 +44,10 @@ type Config struct {
 	// MaxBodyBytes limits request bodies. Zero or less means 1 MiB.
 	MaxBodyBytes int64
 
+	// ShutdownTimeout is how long Run and Serve wait for in-flight requests
+	// after ctx is done. Zero or less means 10 seconds.
+	ShutdownTimeout time.Duration
+
 	// Logger receives handler errors. Nil means slog.Default().
 	Logger *slog.Logger
 
@@ -59,6 +67,7 @@ type App struct {
 	mux          *http.ServeMux
 	handler      atomic.Pointer[http.Handler]
 	maxBody      int64
+	shutdown     time.Duration
 	logger       *slog.Logger
 	validate     *validator.Validate
 	errorHandler func(http.ResponseWriter, *http.Request, *Error)
@@ -80,6 +89,7 @@ func New(c Config) *App {
 	a := &App{
 		mux:          http.NewServeMux(),
 		maxBody:      c.MaxBodyBytes,
+		shutdown:     c.ShutdownTimeout,
 		logger:       c.Logger,
 		validate:     newValidate(),
 		errorHandler: c.ErrorHandler,
@@ -88,6 +98,9 @@ func New(c Config) *App {
 	}
 	if a.maxBody <= 0 {
 		a.maxBody = defaultMaxBodyBytes
+	}
+	if a.shutdown <= 0 {
+		a.shutdown = defaultShutdownTimeout
 	}
 	if a.logger == nil {
 		a.logger = slog.Default()
