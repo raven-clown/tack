@@ -1,4 +1,4 @@
-name: 🐛 Bug report
+name: Bug report
 description: Something in tack doesn't work as expected
 title: "bug: "
 labels: ["bug", "needs-triage"]
@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug! 🙏
+        Thanks for reporting a bug.
         **Security issue?** Do not file it here — follow [SECURITY.md](https://github.com/raven-clown/tack/blob/main/SECURITY.md) instead.
 
   - type: checkboxes

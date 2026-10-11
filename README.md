@@ -9,7 +9,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/raven-clown/tack/badge)](https://scorecard.dev/viewer/?uri=github.com/raven-clown/tack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> ⚠️ **Early development.** tack is pre-1.0. The API may change between minor versions until v1.0. See the [roadmap](#roadmap).
+> **Early development.** tack is pre-1.0. The API may change between minor versions until v1.0. See the [roadmap](#roadmap).
 
 ---
 
@@ -58,12 +58,12 @@ func main() {
 
 That's it. You now have:
 
-- ✅ **Automatic binding** from path, query, header, cookie, and JSON body
-- ✅ **Validation** with clear, field-level error messages
-- ✅ **Standard errors** in [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` format
-- ✅ **OpenAPI 3.1** at `/openapi.json` — always in sync with your code
-- ✅ **Interactive docs** at `/docs`
-- ✅ **TypeScript client** generated from the same types *(v0.4)*
+- **Automatic binding** from path, query, header, cookie, and JSON body
+- **Validation** with clear, field-level error messages
+- **Standard errors** in [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` format
+- **OpenAPI 3.1** at `/openapi.json` — always in sync with your code
+- **Interactive docs** at `/docs`
+- **TypeScript client** generated from the same types *(v0.4)*
 
 ## Installation
 
@@ -128,11 +128,11 @@ Declare a route with `{id}` in the path but no matching `path:"id"` field? tack 
 
 | | net/http only | Gin / Echo / Fiber | **tack** |
 | --- | --- | --- | --- |
-| Typed handlers | ❌ | ❌ | ✅ |
-| Validation built in | ❌ | Partial | ✅ |
-| OpenAPI from code | ❌ | Via plugins / comments | ✅ |
-| TypeScript client | ❌ | ❌ | ✅ *(v0.4)* |
-| Standard `http.Handler` | ✅ | Varies | ✅ |
+| Typed handlers | No | No | Yes |
+| Validation built in | No | Partial | Yes |
+| OpenAPI from code | No | Via plugins / comments | Yes |
+| TypeScript client | No | No | Yes *(v0.4)* |
+| Standard `http.Handler` | Yes | Varies | Yes |
 
 ## Prior art and inspiration
 
@@ -160,8 +160,8 @@ The public launch is planned for v0.5, once the parts that set tack apart are al
 
 | Version | Focus | Status |
 | --- | --- | --- |
-| v0.1 | Core: typed handlers, binding, validation, errors | ✅ Done |
-| v0.2 | OpenAPI 3.1 + `/docs` | ✅ Done |
+| v0.1 | Core: typed handlers, binding, validation, errors | Done |
+| v0.2 | OpenAPI 3.1 + `/docs` | Done |
 | v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Planned |
 | v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Planned |
 | v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Planned |

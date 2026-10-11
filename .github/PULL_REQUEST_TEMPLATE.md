@@ -6,11 +6,11 @@ Closes #
 
 ## Type of change
 
-- [ ] 🐛 Bug fix (non-breaking)
-- [ ] ✨ New feature (non-breaking)
-- [ ] 💥 Breaking change (existing code will need changes)
-- [ ] 📚 Documentation / examples
-- [ ] 🔧 Refactor / tests / tooling
+- [ ] Bug fix (non-breaking)
+- [ ] New feature (non-breaking)
+- [ ] Breaking change (existing code will need changes)
+- [ ] Documentation / examples
+- [ ] Refactor / tests / tooling
 
 ## Public API changes
 

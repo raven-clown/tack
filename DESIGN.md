@@ -47,10 +47,10 @@ tack.Get(v1, "/pets/{id}", getPet) // v1 is a *tack.Group
 
 Signature: `func Get[In, Out any](r Router, path string, h func(context.Context, In) (Out, error), opts ...RouteOption)`.
 
-- ✅ `In` and `Out` are inferred from `h`. Users never write type arguments.
-- ✅ One function works for `*App` and `*Group` through `Router`.
-- ✅ The handler uses the standard `context.Context`.
-- ❌ `tack.Get(app, ...)` reads less like the `app.Get(...)` style people know from Gin and Echo.
+- Pro: `In` and `Out` are inferred from `h`. Users never write type arguments.
+- Pro: One function works for `*App` and `*Group` through `Router`.
+- Pro: The handler uses the standard `context.Context`.
+- Con: `tack.Get(app, ...)` reads less like the `app.Get(...)` style people know from Gin and Echo.
 
 **B. Methods taking a wrapped handler**
 
@@ -58,8 +58,8 @@ Signature: `func Get[In, Out any](r Router, path string, h func(context.Context,
 app.Get("/pets/{id}", tack.Handle(getPet))
 ```
 
-- ✅ Familiar method style.
-- ❌ An extra wrapper on every route. Route options would have to go in two places (wrapper or method).
+- Pro: Familiar method style.
+- Con: An extra wrapper on every route. Route options would have to go in two places (wrapper or method).
 
 **C. Framework context with type parameters (Fuego style)**
 
@@ -67,8 +67,8 @@ app.Get("/pets/{id}", tack.Handle(getPet))
 tack.Get(app, "/pets/{id}", func(c tack.Context[In]) (Pet, error) { ... })
 ```
 
-- ✅ Request helpers live on `c`.
-- ❌ Handlers depend on a tack type instead of `context.Context`. That makes them harder to call from tests and other code.
+- Pro: Request helpers live on `c`.
+- Con: Handlers depend on a tack type instead of `context.Context`. That makes them harder to call from tests and other code.
 
 Sub-decisions under A:
 
@@ -87,10 +87,10 @@ type CreatePetInput struct {
 }
 ```
 
-- ✅ No ambiguity about which fields come from the body.
-- ✅ The body can be any type: a named struct (reused as a `$ref` in OpenAPI), a slice, or a map.
-- ✅ Validation locations map directly: `body.name`, `path.org`.
-- ❌ One extra level of access (`in.Body.Name`), and `Body` is a magic field name.
+- Pro: No ambiguity about which fields come from the body.
+- Pro: The body can be any type: a named struct (reused as a `$ref` in OpenAPI), a slice, or a map.
+- Pro: Validation locations map directly: `body.name`, `path.org`.
+- Con: One extra level of access (`in.Body.Name`), and `Body` is a magic field name.
 
 **B. The whole struct is the body; tagged fields come from elsewhere**
 
@@ -101,9 +101,9 @@ type CreatePetInput struct {
 }
 ```
 
-- ✅ Shortest to write.
-- ❌ A named type such as `Pet` cannot be the body as-is, so OpenAPI needs an anonymous schema per route.
-- ❌ Top-level array bodies are impossible, and untagged fields are ambiguous.
+- Pro: Shortest to write.
+- Con: A named type such as `Pet` cannot be the body as-is, so OpenAPI needs an anonymous schema per route.
+- Con: Top-level array bodies are impossible, and untagged fields are ambiguous.
 
 **C. Body as a separate handler parameter**
 
@@ -111,8 +111,8 @@ type CreatePetInput struct {
 func(ctx context.Context, in CreatePetParams, body Pet) (Pet, error)
 ```
 
-- ✅ Very explicit.
-- ❌ It needs a second set of registration functions or a third type parameter, and GET and POST handlers would have different shapes.
+- Pro: Very explicit.
+- Con: It needs a second set of registration functions or a third type parameter, and GET and POST handlers would have different shapes.
 
 Under A, a field tagged `body:"..."` could later replace the magic name without breaking anything. That isn't needed for v0.1.
 
@@ -124,8 +124,8 @@ Under A, a field tagged `body:"..."` could later replace the magic name without 
 tack.Post(app, "/pets", createPet, tack.Status(http.StatusCreated))
 ```
 
-- ✅ Covers most APIs. The status is known at registration, so OpenAPI documents it.
-- ❌ It can't pick a status at runtime or set headers.
+- Pro: Covers most APIs. The status is known at registration, so OpenAPI documents it.
+- Con: It can't pick a status at runtime or set headers.
 
 **B. Output struct with `Body`, `Status`, and `header` fields (chosen for v0.3, alongside A)**
 
@@ -136,9 +136,9 @@ type CreatePetOutput struct {
 }
 ```
 
-- ✅ Fully typed, and response headers show up in OpenAPI and the TypeScript client.
-- ✅ Mirrors the input side (D2).
-- ❌ The rule "if `Out` has a field named `Body`, only that field is the body" is implicit. Registration should panic when `Out` has `header` or `Status` fields but no `Body`.
+- Pro: Fully typed, and response headers show up in OpenAPI and the TypeScript client.
+- Pro: Mirrors the input side (D2).
+- Con: The rule "if `Out` has a field named `Body`, only that field is the body" is implicit. Registration should panic when `Out` has `header` or `Status` fields but no `Body`.
 
 **C. Generic response wrapper**
 
@@ -146,9 +146,9 @@ type CreatePetOutput struct {
 func(ctx context.Context, in CreatePetInput) (tack.Response[Pet], error)
 ```
 
-- ✅ Explicit and short.
-- ❌ Headers are an untyped `http.Header`, so OpenAPI cannot document them.
-- ❌ It adds an exported generic type that the B design does not need.
+- Pro: Explicit and short.
+- Con: Headers are an untyped `http.Header`, so OpenAPI cannot document them.
+- Con: It adds an exported generic type that the B design does not need.
 
 ## D4. Errors
 
@@ -164,19 +164,19 @@ return Pet{}, tack.NewError(http.StatusNotFound, "pet not found")
 interface{ HTTPStatus() int }
 ```
 
-- ✅ Small API: one type, one constructor, one interface.
-- ✅ Works with `errors.As` through wrapped errors.
-- ❌ `NewError(404, ...)` takes a bare status, with no per-status helper.
+- Pro: Small API: one type, one constructor, one interface.
+- Pro: Works with `errors.As` through wrapped errors.
+- Con: `NewError(404, ...)` takes a bare status, with no per-status helper.
 
 **B. One helper per status (Huma style: `Error404NotFound`, ...)**
 
-- ✅ Reads well at call sites.
-- ❌ Adds about 20 exported functions. That conflicts with principle 3.
+- Pro: Reads well at call sites.
+- Con: Adds about 20 exported functions. That conflicts with principle 3.
 
 **C. One typed error per status (Fuego style: `NotFoundError{}`)**
 
-- ✅ Callers can match on type.
-- ❌ It has the same API growth as B, and status matching already works with `errors.As` on `*tack.Error`.
+- Pro: Callers can match on type.
+- Con: It has the same API growth as B, and status matching already works with `errors.As` on `*tack.Error`.
 
 In every option, unknown errors become a 500 with no details sent to the client and the real error logged through `slog`. The global error format is replaced through `Config.ErrorHandler` (v0.3), never a package variable.
 

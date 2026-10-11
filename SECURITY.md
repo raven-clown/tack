@@ -4,8 +4,8 @@
 
 | Version | Supported |
 | --- | --- |
-| Latest minor release | ✅ |
-| Older releases | ❌ — please upgrade |
+| Latest minor release | Yes |
+| Older releases | No, please upgrade |
 
 Before v1.0, only the latest minor version receives security fixes. After v1.0, the latest two minor versions will be supported.
 

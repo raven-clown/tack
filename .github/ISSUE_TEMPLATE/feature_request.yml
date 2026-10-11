@@ -1,4 +1,4 @@
-name: ✨ Feature request
+name: Feature request
 description: Suggest a new feature or an improvement
 title: "feat: "
 labels: ["enhancement", "needs-triage"]
@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea! 💡
+        Thanks for the idea.
         tack keeps its public API small on purpose, so please start with the **problem** you're facing — not just the solution. That helps us find the best fit, even if it ends up looking different from what you proposed.
 
   - type: checkboxes
