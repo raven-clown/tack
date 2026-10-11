@@ -16,6 +16,7 @@ This file records the design decisions behind tack's public API: the options con
 | D8 | TypeScript client | One fetch-based file generated from the OpenAPI document; methods return a `Result` whose error is the union of the declared problems; undocumented responses throw; `tsgen.Check` in a test keeps the file fresh | Decided |
 | D9 | Zod schemas and the dev loop | Zod in a separate file generated from the document; `tack dev` polls files, builds before it restarts, and writes only what changed; `tack mock` answers from schemas and takes `Prefer: code=` for errors | Decided |
 | D10 | Uploads and streams | `form` tags with `*multipart.FileHeader` fields for uploads; `Stream[T]`, an iterator, for server-sent events; `Run`/`Serve` for graceful shutdown | Decided |
+| D11 | The v0.9 API freeze | `Config.ShutdownTimeout` replaces the constant; `Error.Type` stays a plain field; `Stream[T]` stays a named function type through v1.0 | Decided |
 
 ## Prior art
 
@@ -365,9 +366,72 @@ func(ctx context.Context, in In) (tack.Stream[Tick], error) {
 
 - No: nothing would be documented, and the client could not type the events.
 
-**Shutdown goes through the server's base context.** `Run` and `Serve` register a shutdown hook that cancels the context every request derives from, so streams end on their own and `Shutdown` does not wait for them; handlers that ignore their context still get `ShutdownTimeout`. The timeouts `Run` picks guard headers and idle connections only, because body timeouts would cut uploads and streams.
+**Shutdown goes through the server's base context.** `Run` and `Serve` register a shutdown hook that cancels the context every request derives from, so streams end on their own and `Shutdown` does not wait for them; handlers that ignore their context still get `Config.ShutdownTimeout`. The timeouts `Run` picks guard headers and idle connections only, because body timeouts would cut uploads and streams.
 
 **The mock answers from schemas and takes `Prefer: code=NNN` for errors.** The success response is the default; a frontend asks for a declared error by status, which is the header Prism uses, so nothing new to learn. `examples` and `default` win over derived values, so an API that documents examples gets a realistic mock for free. The mock does not validate requests: that is the real server's job, and a mock that rejects what the server would accept is worse than one that accepts everything.
+
+## D11. The v0.9 API freeze
+
+`API_REVIEW.md` kept every exported identifier and left three questions open. They were decided for the release candidate, since v1.0 freezes whatever v0.9 ships.
+
+### D11.1 `ShutdownTimeout` becomes `Config.ShutdownTimeout`
+
+**A. A `Config` field whose zero value is the old constant (chosen)**
+
+```go
+app := tack.New(tack.Config{ShutdownTimeout: 30 * time.Second})
+```
+
+- Yes: shutdown budgets differ per deployment. Kubernetes gives a pod 30 seconds by default, a serverless runtime a few, and a constant cannot follow either.
+- Yes: the zero value keeps the current ten seconds, so a program that never set it behaves as before.
+- Yes: removing the constant is a breaking change today and would be impossible after v1.0. The migration is one line: delete the reference, or set the field to `10 * time.Second` where the value was used.
+- No: `Config` gains a field. Accepted; every other knob already lives there.
+
+**B. Keep the exported constant**
+
+- No: it could be read but not changed, and after v1.0 it could not be removed either.
+
+**C. A parameter on `Run` and `Serve`**
+
+- No: `Run` would grow a second argument for a value most callers never set, and `Serve` already takes a configured `*http.Server`.
+
+### D11.2 `Error.Type` stays a plain field
+
+**A. Users set the field; no constructor (chosen)**
+
+```go
+var ErrPetNotFound = tack.DefineError(404, "pet_not_found", "pet not found")
+
+func init() { ErrPetNotFound.Type = "https://example.com/problems/pet-not-found" }
+```
+
+- Yes: the smaller API. `Error` is a plain struct, and RFC 9457 makes `type` optional with `about:blank` as the default, which is what tack writes.
+- Yes: a helper such as `WithType(uri)` or a `DefineError` variant can be added later without breaking anything, once there is evidence of what users want: a URI per code, a base URL per app, or both.
+- No: the field is set in two steps for package-level errors. Accepted for a release candidate; the two-week window is the place to learn whether it matters.
+
+**B. `DefineError` takes a type URI**
+
+- No: a fourth parameter most calls leave empty, and the signature could not change later.
+
+**C. `Config.ProblemTypeBase` that derives `type` from the code**
+
+- No: it chooses a URL layout for every user. It remains possible as an additive field.
+
+### D11.3 `Stream[T]` stays a named function type
+
+**A. Keep `type Stream[T any] func(yield func(T) bool)` through v1.0 (chosen)**
+
+- Yes: route detection depends on the methods of the named type. Every instantiation implements the unexported `streamer` interface, so the route finds a stream with a type assertion at registration and never reflects on function types.
+- Yes: the underlying type is the same as `iter.Seq[T]`, so a conversion already works today: `tack.Stream[T](seq)` turns any `iter.Seq[T]` into a stream, and a `Stream[T]` can be passed where an `iter.Seq[T]` is expected. No adapter is needed, and a named helper for the conversion can be added later without breaking anything.
+- No: a handler's return type reads `tack.Stream[T]` rather than `iter.Seq[T]`. Accepted; the name says what the route does with it.
+
+**B. Declare `Stream[T]` as an alias of `iter.Seq[T]`**
+
+- No: an alias has no methods, so the route would have to recognize streams by reflecting on function types, and any `func(yield func(T) bool)` output would become a stream whether the author meant it or not.
+
+**C. Replace it with `iter.Seq[T]` in a v2 module**
+
+- Deferred: a v2 question, once the standard library's iterator types are what users expect in signatures. Nothing in v1 prevents it.
 
 ## Decisions
 
@@ -419,6 +483,9 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Shared `Content-Type` slice (v0.6.2) | The header value is one shared slice with length equal to capacity | `Header().Set` canonicalizes the key and allocates on every response; a full slice is safe to share because `Add` must copy it |
 | Module weight (v0.6.3) | `kin-openapi` and `chi` stay in `go.mod` as test-only requirements; the command stays in the root module | Neither is imported outside `_test.go` files, so a program importing `tack` links only `go-playground/validator` and its dependencies; a separate module for `cmd/tack` would need its own tags and a `replace` during development for nothing |
 | gosec on the command (v0.6.3) | The Security workflow scans `cmd/` in its own run with the path, permission, subprocess, and request rules excluded; the library run excludes `cmd/`; golangci-lint mirrors the split | A command that reads, writes, and runs what its arguments name cannot satisfy those rules without lying; excluding them repo-wide would hide real findings in the library |
+| `ShutdownTimeout` (v0.9) | `Config.ShutdownTimeout`, zero meaning ten seconds; the constant is removed | A constant cannot follow a deployment's shutdown budget, and after v1.0 it could not be removed (D11.1) |
+| `Error.Type` (v0.9) | A plain field; no constructor | The smaller API, and a helper stays possible later (D11.2) |
+| `Stream[T]` (v0.9) | A named function type through v1.0; `iter.Seq[T]` is a v2 question | Route detection depends on its methods; the conversion `Stream[T](seq)` already works (D11.3) |
 | Fuzz targets (v0.6.3) | Fuzz tests for the query scanner, JSON and form binding, header lists, and path patterns, each run for 20 seconds in CI | They hold the scanners to their contracts (`url.ParseQuery` for queries, a bind `Error` with a 4xx status for bodies) on inputs no table test would list |
 
 ## Prototype

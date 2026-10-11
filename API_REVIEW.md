@@ -26,7 +26,7 @@ Verdicts: **keep** (stays as is), **rename** (same thing, better name), **merge*
 | `Config.Logger` | keep | `*slog.Logger` is the standard choice. |
 | `Config.ErrorHandler` | keep | Replaces the error format app-wide; receives the mapped `*Error`. |
 | `Config.Dev` | keep | A single switch for development warnings; more checks can hang off it without new fields. |
-| `ShutdownTimeout` (const) | keep, revisit at v1.0 | A constant cannot be tuned. If a user asks, it becomes `Config.ShutdownTimeout` with this value as the default and the constant is removed; until then one less field. |
+| `Config.ShutdownTimeout` | keep (v0.9: replaced the `ShutdownTimeout` constant) | A constant cannot be tuned and could not be removed after v1.0; the zero value keeps the old ten seconds (DESIGN.md D11.1). |
 | `Router` | keep | Sealed interface implemented by `*App` and `*Group`, so `Get(app, ...)` and `Get(group, ...)` share one signature. |
 | `Get`, `Post`, `Put`, `Patch`, `Delete` | keep | Generic registration; type parameters are inferred. `Head` and `Options` are not offered: they rarely carry typed bodies, and `net/http` serves them when needed. |
 | `RouteOption` | keep | Functional options for routes; the parameter type is unexported so the set of options is closed. |
@@ -81,8 +81,12 @@ Verdicts: **keep** (stays as is), **rename** (same thing, better name), **merge*
 
 `internal/bind`, `internal/schema`, `internal/mock`, and the CLI are not part of the API and may change in any release. The `cmd/tack` command is the user-facing surface for them; its flags are documented in its package comment and checked by its tests.
 
-## Open questions for v0.9
+## Open questions, decided for v0.9
 
-1. `ShutdownTimeout` as a constant or a `Config` field (see above).
-2. Whether `Error` should gain a constructor for RFC 9457 `Type` URIs, or whether users keep setting the field.
-3. Whether `Stream[T]` should be declared as `iter.Seq[T]` once the standard library's iterator types are used widely enough that users expect it. Today the named function type is needed for the methods that route detection relies on.
+All three are recorded in DESIGN.md D11.
+
+1. `ShutdownTimeout`: now `Config.ShutdownTimeout`; the constant is gone.
+2. `Error.Type`: no constructor; users set the field. A helper can be added later.
+3. `Stream[T]`: stays a named function type through v1.0. `iter.Seq[T]` is a v2 question; the conversion `Stream[T](seq)` already works.
+
+`FUTURE_FIT.md` checks that the planned add-ons fit this surface.

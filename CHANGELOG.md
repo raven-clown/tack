@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Breaking
+
+- The `ShutdownTimeout` constant is replaced by `Config.ShutdownTimeout`, whose zero value keeps the ten seconds (DESIGN.md D11.1). Migration: delete references to `tack.ShutdownTimeout`, or set `tack.Config{ShutdownTimeout: 10 * time.Second}` where the value was read.
+
 ## [0.6.3] - 2026-10-11
 
 A hardening release: no public API changes.

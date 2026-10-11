@@ -97,7 +97,7 @@ func TestRunShutsDownStreams(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Errorf("Serve returned %v", err)
 	}
-	if took := time.Since(start); took > ShutdownTimeout {
+	if took := time.Since(start); took > defaultShutdownTimeout {
 		t.Errorf("shutdown took %s; the stream's context should have been canceled", took)
 	}
 	if res, err := http.Get("http://" + addr + "/base"); err == nil { //nolint:noctx // test
@@ -125,4 +125,41 @@ func TestRunErrors(t *testing.T) {
 	if err := app.Run(ctx, freeAddr(t)); err != nil {
 		t.Errorf("Run with a done context should shut down cleanly, got %v", err)
 	}
+}
+
+func TestShutdownTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer http.DefaultClient.CloseIdleConnections()
+	release := make(chan struct{})
+	app := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ShutdownTimeout: 50 * time.Millisecond})
+	Get(app, "/block", func(context.Context, struct{}) (struct{}, error) {
+		<-release // ignores ctx on purpose
+		return struct{}{}, nil
+	})
+	addr := freeAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- app.Run(ctx, addr) }()
+	waitForServer(t, "http://"+addr+"/openapi.json")
+
+	got := make(chan error, 1)
+	go func() {
+		res, err := http.Get("http://" + addr + "/block") //nolint:noctx // test
+		if err == nil {
+			res.Body.Close()
+		}
+		got <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	start := time.Now()
+	cancel()
+	err := <-done
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Run returned %v, want the shutdown deadline", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("shutdown took %s with a 50ms ShutdownTimeout", took)
+	}
+	close(release)
+	<-got
 }

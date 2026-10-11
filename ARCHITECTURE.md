@@ -131,7 +131,7 @@ A route whose `validate` tags are all simple rules (`required`, `omitempty`, `mi
 
 ### Serving
 
-`App.Run` and `App.Serve` own the listener and the shutdown. The server's `BaseContext` is a context canceled from `RegisterOnShutdown`, so when `ctx` is done every in-flight request (streams included) sees its context canceled while `Shutdown` waits up to `ShutdownTimeout` for handlers to return. A caller's `BaseContext` is kept and merged with `context.AfterFunc`. `Serve` returns nil after a clean shutdown whether `ctx` or a direct `srv.Shutdown` ended it.
+`App.Run` and `App.Serve` own the listener and the shutdown. The server's `BaseContext` is a context canceled from `RegisterOnShutdown`, so when `ctx` is done every in-flight request (streams included) sees its context canceled while `Shutdown` waits up to `Config.ShutdownTimeout` (ten seconds when unset) for handlers to return. A caller's `BaseContext` is kept and merged with `context.AfterFunc`. `Serve` returns nil after a clean shutdown whether `ctx` or a direct `srv.Shutdown` ended it.
 
 ### Output plan
 

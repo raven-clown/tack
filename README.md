@@ -287,7 +287,7 @@ if (res.ok) for await (const e of res.data) console.log(e.event, e.data.pet.name
 
 ### Graceful shutdown
 
-`app.Run(ctx, addr)` serves until the context is done, then stops accepting connections, ends open streams, and waits up to ten seconds for handlers to finish. `app.Serve(ctx, srv)` does the same with an `http.Server` you configured.
+`app.Run(ctx, addr)` serves until the context is done, then stops accepting connections, ends open streams, and waits up to `Config.ShutdownTimeout` (ten seconds unless set) for handlers to finish. `app.Serve(ctx, srv)` does the same with an `http.Server` you configured.
 
 ```go
 ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
