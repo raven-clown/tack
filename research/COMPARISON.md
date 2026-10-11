@@ -7,7 +7,7 @@ Measured on 2026-10-11 with Go 1.27.2 (windows/amd64), Node 22.15.0, TypeScript 
 | Variant | Directory | Versions |
 | --- | --- | --- |
 | Gin + swaggo | `gin-swaggo/` | gin v1.12.0, swag v1.16.6, gin-swagger v1.6.1 |
-| oapi-codegen (spec-first) | `oapi-codegen/` | oapi-codegen v2.8.0, nethttp-middleware v1.2.0 (kin-openapi v0.142.0) |
+| oapi-codegen (spec-first) | `oapi-codegen/` | oapi-codegen v2.8.0, nethttp-middleware v1.2.0 (kin-openapi v0.149.0) |
 | Huma | `huma/` | huma v2.39.1 |
 | tack | `tack/` | tack v0.2.0 |
 
