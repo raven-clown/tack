@@ -40,7 +40,7 @@ Write all of it in plain prose: no emoji, no em dashes, short sentences.
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `ci:`, `refactor(bind):`). Commit messages describe the change and why; they carry no trailers, sign-offs, or tool attribution.
 - Author and committer are the maintainer's identity (`raven-clown <160258096+raven-clown@users.noreply.github.com>`). Set `git config user.name` and `user.email` before the first commit.
 - Nothing in the repository mentions which tools or assistants produced it: not commit messages, branch names, code comments, or docs.
-- Release: finish the CHANGELOG heading and links, tag the merge commit with `git tag -a vX.Y.Z -m "tack vX.Y.Z: <one line of what shipped>"`, push the tag, then `gh release create vX.Y.Z --title vX.Y.Z --notes-file <the CHANGELOG section>`.
+- Release: finish the CHANGELOG heading and links, tag the merge commit with `git tag -a vX.Y.Z -m "tack vX.Y.Z: <one line of what shipped>"`, push the tag, then `gh release create vX.Y.Z --title vX.Y.Z --notes-file <the CHANGELOG section>`. Publishing the release triggers `.github/workflows/release.yml`, which builds the `tack` command for every platform and attaches the archives.
 
 ## Map
 
@@ -52,7 +52,9 @@ Write all of it in plain prose: no emoji, no em dashes, short sentences.
 | `internal/bind` | Request to struct plans |
 | `internal/schema` | Go types to JSON Schema, including `validate` tag mapping |
 | `openapi/` | Document types (public) |
-| `tsgen/` | TypeScript client generator and `Check` |
-| `cmd/tack` | CLI: `gen ts`, `check` |
+| `tsgen/` | TypeScript client and Zod schema generators with `Check`/`CheckZod` |
+| `internal/mock` | Example responses for `tack mock` |
+| `stream.go`, `server.go` | `Stream`/`Event` for server-sent events; `Run`/`Serve` with graceful shutdown |
+| `cmd/tack` | CLI: `gen ts`, `gen zod`, `check`, `dev`, `mock`, `new`, `version`; project template under `template/` |
 | `examples/` | Runnable apps; `petstore` commits its generated client |
 | `research/` | Measured comparison with other frameworks; do not edit casually |

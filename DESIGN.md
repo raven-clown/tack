@@ -15,6 +15,7 @@ This file records the design decisions behind tack's public API: the options con
 | D7 | Typed errors | `DefineError(status, code, detail)` returns an `*Error` with a `code`; `Errors(...)` documents them per route, one schema per code | Decided |
 | D8 | TypeScript client | One fetch-based file generated from the OpenAPI document; methods return a `Result` whose error is the union of the declared problems; undocumented responses throw; `tsgen.Check` in a test keeps the file fresh | Decided |
 | D9 | Zod schemas and the dev loop | Zod in a separate file generated from the document; `tack dev` polls files, builds before it restarts, and writes only what changed; `tack mock` answers from schemas and takes `Prefer: code=` for errors | Decided |
+| D10 | Uploads and streams | `form` tags with `*multipart.FileHeader` fields for uploads; `Stream[T]`, an iterator, for server-sent events; `Run`/`Serve` for graceful shutdown | Decided |
 
 ## Prior art
 
@@ -318,6 +319,54 @@ const result = PostPetsInput.safeParse({ body: form });
 
 **The dev loop polls files and builds before it restarts.** A file watcher would be the first dependency outside the standard library, and a 500 ms poll of a project's Go files costs nothing noticeable. `go build` runs first and the old app keeps serving until the new binary exists, so a typo never leaves the frontend without an API. Files are written only when their content changed, so editors and type checkers are not woken for an identical client.
 
+## D10. Uploads and streams
+
+**A. Uploads: `form` tags and `*multipart.FileHeader` fields (chosen)**
+
+```go
+type photoInput struct {
+	ID      int                   `path:"id"`
+	Photo   *multipart.FileHeader `form:"photo" validate:"required"`
+	Caption string                `form:"caption" validate:"max=100"`
+}
+```
+
+- Yes: one more source tag next to `path`, `query`, `header`, and `cookie`, with the same converters, defaults, validation, and `form.photo` locations. Nothing new to learn.
+- Yes: `*multipart.FileHeader` is the standard library's own type, so handlers open files the way they always have, and no tack type wraps it.
+- Yes: the document gets a `multipart/form-data` body with `binary` strings, which is what makes the client send `FormData` and `/docs` show a file picker.
+- No: a form and a JSON `Body` in one input, since a request has one body.
+
+**B. A `tack.File` type or an `Upload` wrapper**
+
+- No: it would only hide `*multipart.FileHeader`, and every handler would convert back to it.
+
+**C. Raw `io.Reader` bodies**
+
+- No: a raw body has no fields to document or validate; it is a different feature (downloads and raw uploads) left for later.
+
+**A. Streams: `Stream[T]` is an iterator the handler returns (chosen)**
+
+```go
+func(ctx context.Context, in In) (tack.Stream[Tick], error) {
+	return func(yield func(Tick) bool) { ... }, nil
+}
+```
+
+- Yes: the handler keeps the `(Out, error)` shape, so groups, middleware, errors, and docs work unchanged, and an error before the first event is still a problem response.
+- Yes: a Go iterator is the idiomatic way to produce values on demand; `yield` returning false is the disconnect signal, and `ctx` covers waiting inside the loop.
+- Yes: `Stream` is a named function type with methods, so every instantiation implements the serving interface and the route sends it with a type assertion, keeping reflection out of request time.
+- No: errors after the first event cannot change the status; they are sent as an `error` event. That is a property of SSE, not of this design.
+
+**B. A channel (`<-chan T`)**
+
+- No: the producer goroutine's lifetime is the handler's problem, and a closed channel cannot report why it closed.
+
+**C. A `w http.ResponseWriter` escape hatch**
+
+- No: nothing would be documented, and the client could not type the events.
+
+**Shutdown goes through the server's base context.** `Run` and `Serve` register a shutdown hook that cancels the context every request derives from, so streams end on their own and `Shutdown` does not wait for them; handlers that ignore their context still get `ShutdownTimeout`. The timeouts `Run` picks guard headers and idle connections only, because body timeouts would cut uploads and streams.
+
 **The mock answers from schemas and takes `Prefer: code=NNN` for errors.** The success response is the default; a frontend asks for a declared error by status, which is the header Prism uses, so nothing new to learn. `examples` and `default` win over derived values, so an API that documents examples gets a realistic mock for free. The mock does not validate requests: that is the real server's job, and a mock that rejects what the server would accept is worse than one that accepts everything.
 
 ## Decisions
@@ -358,6 +407,12 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Defaults in Zod (v0.5) | A documented `default` becomes `.default(v)` rather than `.optional()` | The parsed value then matches what the server would have bound |
 | Mock `oneOf` (v0.5) | The first alternative, in document order | One deterministic answer; the other codes are reachable by status with `Prefer` only when they have their own status |
 | Dev loop restart (v0.5) | Kill and restart the binary; no graceful shutdown | It is a development server; in-flight requests on save are not worth waiting for |
+| Form content types (v0.6) | `multipart/form-data` always; `application/x-www-form-urlencoded` too when the form has no file fields; anything else is 415 | A file needs multipart; a plain form should work from an HTML form without JavaScript |
+| Form memory (v0.6) | 32 MiB in memory, the rest in temporary files removed after the handler | The standard library's default, and uploads should not be bounded by RAM |
+| Known oversized bodies (v0.6) | Refused with 413 from `Content-Length` before reading | No point reading what will be rejected, and the multipart reader hides the limit error otherwise |
+| Event encoding (v0.6) | `Event.Name` and `Event.ID` lines are flattened to one line each | SSE fields cannot span lines; data is JSON so it never does |
+| `tack new` and versions (v0.6) | The template's `go.mod` names no tack version; `go mod tidy` picks the latest | The command cannot know which version the project should pin, and a stale pin would be worse than none |
+| Release binaries (v0.6) | Built when a release is published, from plain `go build` in a workflow, and attached with checksums | No extra tooling to configure, and the maintainer keeps writing the release notes |
 
 ## Prototype
 

@@ -67,14 +67,17 @@ That's it. You now have:
 - **TypeScript client** generated from the same types, where the errors a route declares form a typed union
 - **Zod schemas** with the same validation rules, for forms that check before they send
 - **`tack dev`** to rebuild the app and the client on every save, and **`tack mock`** to serve example responses before the API exists
+- **File uploads** from multipart forms and **server-sent events** from an iterator, both typed, documented, and in the client
+- **Graceful shutdown** with `app.Run(ctx, addr)`, and **`tack new`** for a project that has all of this on day one
 
 ## Installation
 
 ```bash
 go get github.com/raven-clown/tack
+go install github.com/raven-clown/tack/cmd/tack@latest   # the command: dev, mock, gen, check, new
 ```
 
-Requires one of the two most recent Go releases.
+Requires one of the two most recent Go releases. Prebuilt binaries of the `tack` command for Linux, macOS, and Windows are attached to each [release](https://github.com/raven-clown/tack/releases). Start a project with `tack new myapi`.
 
 ## Features
 
@@ -236,6 +239,62 @@ type CreatePetOutput struct {
 }
 ```
 
+### File uploads
+
+A `form` tag reads a multipart or URL-encoded form, and a `*multipart.FileHeader` field is an uploaded file. Validation, the docs, and the client know about all of it: the client sends `FormData`, and a missing required file is a `validation_failed` at `form.photo`.
+
+```go
+type photoInput struct {
+	ID      int                   `path:"id"`
+	Photo   *multipart.FileHeader `form:"photo" validate:"required"`
+	Caption string                `form:"caption" validate:"max=100"`
+}
+```
+
+```ts
+await api.postPetsByIdPhoto({ id: 7, body: { photo: file, caption: "asleep" } });
+```
+
+Bodies are limited by `Config.MaxBodyBytes` (1 MiB unless set), so raise it for uploads.
+
+### Server-sent events
+
+Return a `tack.Stream[T]`, an iterator, and every value becomes one event with its JSON on the data line. The context ends when the client disconnects or the server shuts down. The docs show `text/event-stream` with the schema of `T`, and the client reads it as an async iterable:
+
+```go
+tack.Get(app, "/pets/events", func(ctx context.Context, _ struct{}) (tack.Stream[tack.Event[Change]], error) {
+	return func(yield func(tack.Event[Change]) bool) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case c := <-changes:
+				if !yield(tack.Event[Change]{Name: c.Action, Data: c}) {
+					return
+				}
+			}
+		}
+	}, nil
+})
+```
+
+```ts
+const res = await api.getPetsEvents();
+if (res.ok) for await (const e of res.data) console.log(e.event, e.data.pet.name);
+```
+
+`tack.Event` adds the event name and ID; a plain `tack.Stream[T]` sends data lines only.
+
+### Graceful shutdown
+
+`app.Run(ctx, addr)` serves until the context is done, then stops accepting connections, ends open streams, and waits up to ten seconds for handlers to finish. `app.Serve(ctx, srv)` does the same with an `http.Server` you configured.
+
+```go
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+log.Fatal(app.Run(ctx, ":8080"))
+```
+
 ### Just `net/http`
 
 A `*tack.App` is an `http.Handler`. Use it with `http.Server`, mount it inside another router, and use any standard middleware (`func(http.Handler) http.Handler`). No lock-in.
@@ -293,7 +352,7 @@ As of v0.5 the parts that set tack apart are all in place; the public launch fol
 | v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Done |
 | v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Done |
 | v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Done |
-| v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Planned |
+| v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Done |
 | v0.9 | Release candidate: API review, fuzzing, benchmarks | Planned |
 | v1.0 | Stable API, docs site, real-world examples | Planned |
 

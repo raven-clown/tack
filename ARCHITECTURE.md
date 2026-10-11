@@ -59,7 +59,7 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 /openapi            OpenAPI 3.1 document types
 /tsgen              Generates the TypeScript client and Zod schemas from the OpenAPI document
 /internal/mock      Serves example responses for a document (tack mock)
-/cmd/tack           CLI: gen ts, gen zod, check, dev, mock (new, spec, diff, build planned)
+/cmd/tack           CLI: gen ts, gen zod, check, dev, mock, new, version (spec, diff, build planned)
 /tacktest           Typed test client (v1.3)
 /examples           Runnable example projects (each its own module if it has extra deps)
 /bench              Benchmarks against other frameworks (separate module)
@@ -95,9 +95,12 @@ At registration, the `In` type is analyzed once to produce a **plan**: a flat li
 | `query:"page"` | URL query (repeated keys → slices) | `?page=2` |
 | `header:"X-Request-ID"` | Request header | |
 | `cookie:"session"` | Cookie | |
+| `form:"caption"` | Multipart or URL-encoded form value; `*multipart.FileHeader` fields are files | |
 | `json:"name"` | JSON request body | |
 
 Each step holds the field index path, the source, the name, and a **converter** chosen up front (string → int, string → `time.Time`, etc.). At request time, executing the plan is a loop with no reflection on types — only `reflect.Value` field sets at known indices.
+
+A plan with `form` fields parses the body first: `r.ParseMultipartForm` for `multipart/form-data` (32 MiB in memory, the rest in temporary files the route removes after the handler) or `r.ParseForm` for `application/x-www-form-urlencoded`; anything else is a 415. Values then bind from `r.PostForm` like query values, and file steps copy the `*multipart.FileHeader`s from `r.MultipartForm.File`. A body whose length is known to exceed `Config.MaxBodyBytes` is refused before it is read; a chunked one is cut off by `http.MaxBytesReader`, which the multipart reader hides as an EOF, so the plan probes the reader to report a 413 rather than a 400.
 
 ### Validation
 
@@ -106,6 +109,14 @@ Validation is delegated to `go-playground/validator/v10`, wrapped so that:
 - all field errors are collected into one response,
 - locations are reported as `body.name`, `query.page`, `path.id`,
 - messages are human-readable.
+
+### Streams
+
+`Stream[T]` is a named function type, `func(yield func(T) bool)`, so it is both an iterator and a type with methods: every instantiation implements an unexported interface with `serve`, which the route calls through a type assertion, not reflection. `serve` sets `text/event-stream`, flushes the headers, then drives the iterator, writing `data:` (and `event:`/`id:` for `Event[T]`) lines and flushing after each event. It stops when the request context is done or a write fails, and `yield` returns false so the producer's loop ends too. An encoding failure cannot become a problem response once the stream is open, so it is sent as an `error` event. At registration, `newOutput` records the item type (the `Data` type for `Event[T]`), which the document uses as the response schema; a `Stream` inside an output wrapper is rejected.
+
+### Serving
+
+`App.Run` and `App.Serve` own the listener and the shutdown. The server's `BaseContext` is a context canceled from `RegisterOnShutdown`, so when `ctx` is done every in-flight request (streams included) sees its context canceled while `Shutdown` waits up to `ShutdownTimeout` for handlers to return. A caller's `BaseContext` is kept and merged with `context.AfterFunc`.
 
 ### Output plan
 
@@ -158,7 +169,11 @@ The same `collect` pass plans the names, then a second emitter writes a separate
 
 ### Mock server (`internal/mock`)
 
-`mock.Handler(doc)` registers one `ServeMux` route per operation and prepares every documented response once: the body is built from the response schema by `example`, which prefers `examples`, then `default`, then the first `enum` value, and otherwise derives a value from the type, format, bounds, and property name, merging `allOf` and taking the first `oneOf`/`anyOf` alternative; recursion through `$ref` stops after four levels. A problem body gets the real status, title, and the detail the error was defined with. The success status is served by default; a `Prefer: code=NNN` header selects another documented status, and an undocumented one is a 400 with code `undocumented_status`. OpenAPI paths are exact, so a path ending in `/` is registered with `{$}`. The handler adds cross-origin headers to every response, answers preflight requests, and serves the document at `/openapi.json`. Requests are not validated.
+`mock.Handler(doc)` registers one `ServeMux` route per operation and prepares every documented response once: the body is built from the response schema by `example`, which prefers `examples`, then `default`, then the first `enum` value, and otherwise derives a value from the type, format, bounds, and property name, merging `allOf` and taking the first `oneOf`/`anyOf` alternative; recursion through `$ref` stops after four levels. A problem body gets the real status, title, and the detail the error was defined with. A `text/event-stream` response is sent as one `data:` event. The success status is served by default; a `Prefer: code=NNN` header selects another documented status, and an undocumented one is a 400 with code `undocumented_status`. OpenAPI paths are exact, so a path ending in `/` is registered with `{$}`. The handler adds cross-origin headers to every response, answers preflight requests, and serves the document at `/openapi.json`. Requests are not validated.
+
+### Project template (`tack new`)
+
+The files under `cmd/tack/template` are `text/template` sources (named `.tmpl` so they are not compiled into the command) embedded with `embed.FS`. `tack new` renders them with the module path, directory name, and Go version, and refuses a directory that is not empty. The generated `go.mod` has no `require`: `go mod tidy` adds tack at the current version, so the template never pins one. The test builds the generated project against the checkout with a `replace` directive and runs its tests, which also generate its client.
 
 ### Dev loop (`tack dev`)
 

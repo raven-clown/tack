@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- File uploads: a `form:"name"` tag binds a field from a `multipart/form-data` or `application/x-www-form-urlencoded` body, and a `*multipart.FileHeader` or `[]*multipart.FileHeader` field receives uploaded files. Form values use the same converters, defaults, and `validate` rules as query values, with locations such as `form.photo`. The request body is documented as a form with files as binary strings, so the TypeScript client sends `FormData` (`Blob` fields), the Zod schemas use `z.instanceof(Blob)`, and `/docs` shows a file picker. Temporary files are removed when the handler returns. An input cannot have both a `Body` field and form fields.
+- Server-sent events: a handler that returns `tack.Stream[T]`, an iterator `func(yield func(T) bool)`, sends one event per value with its JSON on the data line, flushing each. `tack.Event[T]` adds the event name and ID. The request context is done when the client disconnects or the server shuts down, and `yield` returns false once the connection is gone. The response is documented as `text/event-stream` with the schema of `T`; the client returns `AsyncIterable<ServerEvent<T>>` and `tack mock` sends one example event.
+- `App.Run(ctx, addr)` and `App.Serve(ctx, srv)` serve until the context is done, then shut down gracefully: no new connections, every request context canceled (which ends streams), and up to `ShutdownTimeout` (10 seconds) for in-flight handlers. `Run` uses a server with a 10 second header timeout and a two minute idle timeout and no body timeouts, so uploads and streams are not cut off.
+- A request whose `Content-Length` exceeds `Config.MaxBodyBytes` is refused with 413 before the body is read.
+- `tack new <dir> [-module path]` creates a runnable project: one resource with a typed error, groups, a `Location` header, graceful shutdown, a README, and a test that regenerates and checks `client/api.ts` and `client/schemas.ts`.
+- `tack version` prints the version. Publishing a GitHub release builds the command for Linux, macOS, and Windows (amd64 and arm64) and attaches the archives and a checksum file.
+- `examples/petstore` gains `POST /pets/{id}/photo` and `GET /pets/events`, and uses `Run`.
+
+### Changed
+
+- The detail of the `unsupported_media_type` (415) problem is now "unsupported content type", since bodies can be JSON or forms.
+
 ## [0.5.0] - 2026-10-11
 
 ### Added
@@ -106,7 +122,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/raven-clown/tack/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/raven-clown/tack/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/raven-clown/tack/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/raven-clown/tack/compare/v0.2.0...v0.3.0
