@@ -16,7 +16,7 @@ Before v1.0, only the latest minor version receives security fixes. After v1.0, 
 Instead, use one of these private channels:
 
 1. **GitHub private vulnerability reporting** (preferred): go to the [Security tab](https://github.com/raven-clown/tack/security) and click **Report a vulnerability**.
-2. **Email:** security@your-domain.example (replace with a real address).
+2. **Email:** ekdanai.kk@gmail.com
 
 Please include:
 

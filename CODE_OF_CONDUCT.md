@@ -28,7 +28,7 @@ This Code of Conduct applies in all project spaces, and when someone officially 
 
 ## Reporting
 
-If you experience or witness unacceptable behavior, contact the maintainers privately at **conduct@your-domain.example** (replace with a real address). All reports will be reviewed promptly and handled confidentially. Reporters will not face retaliation.
+If you experience or witness unacceptable behavior, contact the maintainers privately at **ekdanai.kk@gmail.com**. All reports will be reviewed promptly and handled confidentially. Reporters will not face retaliation.
 
 ## Enforcement
 
