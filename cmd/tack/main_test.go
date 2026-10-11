@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,7 +16,7 @@ const golden = "../../testdata/openapi.golden.json"
 func runCLI(t *testing.T, stdin string, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code = run(args, strings.NewReader(stdin), &out, &errb)
+	code = run(context.Background(), args, strings.NewReader(stdin), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
