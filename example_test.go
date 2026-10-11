@@ -22,6 +22,14 @@ func serve(app *tack.App, method, url, body string) {
 	fmt.Println(rec.Code, rec.Body.String())
 }
 
+func serveWithHeader(app *tack.App, method, url, key, value string) {
+	req := httptest.NewRequest(method, url, nil)
+	req.Header.Set(key, value)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	fmt.Println(rec.Code, rec.Body.String())
+}
+
 func ExampleGet() {
 	app := tack.New(tack.Config{Title: "Pet API", Version: "1.0.0"})
 

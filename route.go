@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/raven-clown/tack/internal/bind"
@@ -22,6 +23,7 @@ type routeConfig struct {
 	tags        []string
 	operationID string
 	deprecated  bool
+	middleware  []func(http.Handler) http.Handler
 }
 
 // Status sets the status code of successful responses. The default is 200.
@@ -52,6 +54,12 @@ func OperationID(id string) RouteOption {
 // Deprecated marks the operation as deprecated in the OpenAPI document.
 func Deprecated() RouteOption {
 	return func(c *routeConfig) { c.deprecated = true }
+}
+
+// Middleware wraps this route's handler in mw, inside any app and group
+// middleware. The first middleware runs outermost.
+func Middleware(mw ...func(http.Handler) http.Handler) RouteOption {
+	return func(c *routeConfig) { c.middleware = append(c.middleware, mw...) }
 }
 
 // Get registers h for GET requests to path. In and Out are inferred from h.
@@ -85,13 +93,19 @@ func Delete[In, Out any](r Router, path string, h func(context.Context, In) (Out
 
 func handle[In, Out any](r Router, method, path string, h func(context.Context, In) (Out, error), opts []RouteOption) {
 	a := r.app()
+	if prefix := r.prefix(); prefix != "" {
+		if path == "/" {
+			panic(fmt.Sprintf("tack: %s %s/: path \"/\" under a group matches every path below %s/; use \"/{$}\" for %s/ alone or \"\" for %s", method, prefix, prefix, prefix, prefix))
+		}
+		path = prefix + path
+	}
 	route := method + " " + path
 	if h == nil {
 		panic(fmt.Sprintf("tack: %s: handler is nil", route))
 	}
 
 	cfg := routeConfig{status: http.StatusOK}
-	for _, o := range opts {
+	for _, o := range slices.Concat(r.options(), opts) {
 		o(&cfg)
 	}
 	if cfg.status < 200 || cfg.status > 399 {
@@ -121,7 +135,7 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		prefix = t.Name() + "."
 	}
 
-	handler := func(w http.ResponseWriter, req *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var in In
 		if plan.HasBody() {
 			req.Body = http.MaxBytesReader(w, req.Body, a.maxBody)
@@ -142,8 +156,9 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 			return
 		}
 		a.writeJSON(w, req, route, cfg.status, res)
-	}
-	if err := register(a.mux, route, handler); err != nil {
+	})
+	mws := slices.Concat(r.middleware(), cfg.middleware)
+	if err := register(a.mux, route, chain(mws, handler)); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v; wildcards must be whole segments like {id}, and each method and path can be registered once", route, err))
 	}
 	if err := a.addOperation(method, path, plan, out, cfg); err != nil {
@@ -152,13 +167,13 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 }
 
 // register turns ServeMux panics into errors.
-func register(mux *http.ServeMux, pattern string, h http.HandlerFunc) (err error) {
+func register(mux *http.ServeMux, pattern string, h http.Handler) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
 		}
 	}()
-	mux.HandleFunc(pattern, h)
+	mux.Handle(pattern, h)
 	return nil
 }
 

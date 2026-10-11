@@ -42,15 +42,21 @@ type PathItem struct {
 
 // Operation describes one route.
 type Operation struct {
-	OperationID string               `json:"operationId,omitempty"`
-	Summary     string               `json:"summary,omitempty"`
-	Description string               `json:"description,omitempty"`
-	Tags        []string             `json:"tags,omitempty"`
-	Deprecated  bool                 `json:"deprecated,omitempty"`
-	Parameters  []*Parameter         `json:"parameters,omitempty"`
-	RequestBody *RequestBody         `json:"requestBody,omitempty"`
-	Responses   map[string]*Response `json:"responses"`
+	OperationID string                `json:"operationId,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Description string                `json:"description,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
+	Deprecated  bool                  `json:"deprecated,omitempty"`
+	Parameters  []*Parameter          `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]*Response  `json:"responses"`
+	Security    []SecurityRequirement `json:"security,omitempty"`
 }
+
+// SecurityRequirement names the schemes a request may satisfy, with the
+// scopes each needs. A list of requirements on an operation means any one of
+// them is enough.
+type SecurityRequirement map[string][]string
 
 // Parameter is a path, query, header, or cookie parameter.
 type Parameter struct {
@@ -71,7 +77,15 @@ type RequestBody struct {
 // Response describes one response status.
 type Response struct {
 	Description string                `json:"description"`
+	Headers     map[string]*Header    `json:"headers,omitempty"`
 	Content     map[string]*MediaType `json:"content,omitempty"`
+}
+
+// Header describes one response header.
+type Header struct {
+	Description string  `json:"description,omitempty"`
+	Required    bool    `json:"required,omitempty"`
+	Schema      *Schema `json:"schema"`
 }
 
 // MediaType holds the schema for one content type.
@@ -79,9 +93,22 @@ type MediaType struct {
 	Schema *Schema `json:"schema"`
 }
 
-// Components holds reusable schemas.
+// Components holds reusable schemas and security schemes.
 type Components struct {
-	Schemas map[string]*Schema `json:"schemas,omitempty"`
+	Schemas         map[string]*Schema         `json:"schemas,omitempty"`
+	SecuritySchemes map[string]*SecurityScheme `json:"securitySchemes,omitempty"`
+}
+
+// SecurityScheme is an authentication scheme. Type is "http" with a Scheme of
+// "bearer" or "basic", or "apiKey" with In ("header", "query", or "cookie")
+// and Name.
+type SecurityScheme struct {
+	Type         string `json:"type"`
+	Description  string `json:"description,omitempty"`
+	Scheme       string `json:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty"`
+	In           string `json:"in,omitempty"`
+	Name         string `json:"name,omitempty"`
 }
 
 // Schema is a JSON Schema 2020-12 object.
@@ -98,7 +125,9 @@ type Schema struct {
 	Required             []string           `json:"required,omitempty"`
 	AdditionalProperties *Schema            `json:"additionalProperties,omitempty"`
 	Items                *Schema            `json:"items,omitempty"`
+	AllOf                []*Schema          `json:"allOf,omitempty"`
 	AnyOf                []*Schema          `json:"anyOf,omitempty"`
+	OneOf                []*Schema          `json:"oneOf,omitempty"`
 	Enum                 []any              `json:"enum,omitempty"`
 	Default              any                `json:"default,omitempty"`
 	Examples             []any              `json:"examples,omitempty"`
