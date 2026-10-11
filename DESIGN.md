@@ -282,7 +282,9 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | `ErrorHandler` input (v0.3) | The mapped `*Error`, with the original error reachable through `Unwrap` | Replacing the format should not mean reimplementing the status mapping and 5xx hiding |
 | 401 on secured routes (v0.3) | Documented automatically with `ErrUnauthorized`; middleware sends it with `App.WriteError` | A route that declares a scheme always has a 401; the exported value keeps docs and middleware in agreement |
 | Several `Security` options (v0.3) | Alternatives: any one scheme is enough | Matches the OpenAPI list semantics; combined requirements can come later without breaking this |
-| Output `Status` detection (v0.3) | Only an untagged `int` named `Status` next to `Body` is the status; a `Status` with a `json` tag or another type stays a JSON field | Health-style responses keep working, and a tag states intent |
+| Output `Status` detection (v0.3) | In a wrapper (a struct with `Body`), `Status` must be an untagged `int`; without `Body`, a `Status` with a `json` tag or another type stays a JSON field and only an untagged `int` panics | Health-style responses keep working, and a tag states intent |
+| `ContextValue[T]` (v0.3) | One generic helper instead of a typed context API | Middleware already uses `context.WithValue`; the helper only removes the type assertion and its `ok` boilerplate from handlers, so nothing else needs to exist |
+| Runtime `Status` (v0.3) | Must be 2xx or 3xx, like the `Status` option; anything else is a 500 | Failures go through errors so they get problem+json and appear in the spec |
 | Empty response headers (v0.3) | Nil pointers, empty slices, and empty strings are not sent and are optional in the spec | `Location: ` with no value is never wanted |
 | `time.Time` headers (v0.3) | RFC 3339 | Mirrors the input side; use a string field for HTTP-date headers such as `Last-Modified` |
 

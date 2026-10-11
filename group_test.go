@@ -86,7 +86,7 @@ func TestGroupPrefixes(t *testing.T) {
 func TestGroupUseAfterNesting(t *testing.T) {
 	app := New(Config{})
 	v1 := app.Group("/v1")
-	admin := v1.Group("/admin")
+	admin := v1.Group("/admin").With(Tags("x"))
 	v1.Use(tag("late"))
 	Get(admin, "/x", func(ctx context.Context, _ struct{}) (string, error) {
 		trail, _ := ContextValue[string](ctx, ctxKey{})
@@ -140,6 +140,9 @@ func TestGroupPanics(t *testing.T) {
 			`tack: GET /v1/: path "/" under a group matches every path below /v1/; use "/{$}" for /v1/ alone or "" for /v1`},
 		{"missing path field in prefix", func(a *App) { Get(a.Group("/orgs/{org}"), "/pets", trailHandler) },
 			"tack: GET /orgs/{org}/pets: path parameter {org} has no field"},
+		{"route without leading slash", func(a *App) { Get(a.Group("/v1"), "pets", trailHandler) },
+			`tack: GET /v1pets: path "pets" under group /v1 must start with "/"`},
+		{"root prefix", func(a *App) { a.Group("/") }, `tack: group prefix "/" must start with "/" and not end with one; use "" for a group without a prefix`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -175,14 +175,21 @@ func ExamplePost_responseHeaders() {
 	app := tack.New(tack.Config{})
 	tack.Post(app, "/pets", func(_ context.Context, in struct{ Body Pet }) (CreatePetOutput, error) {
 		in.Body.ID = 1
-		return CreatePetOutput{Status: http.StatusCreated, Location: "/pets/1", Body: in.Body}, nil
-	})
+		if in.Body.Name == "Rex" {
+			// Already there: answer 200 instead of the documented 201.
+			return CreatePetOutput{Status: http.StatusOK, Body: in.Body}, nil
+		}
+		return CreatePetOutput{Location: "/pets/1", Body: in.Body}, nil
+	}, tack.Status(http.StatusCreated))
 
-	rec := httptest.NewRecorder()
-	app.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/pets", strings.NewReader(`{"name":"Rex"}`)))
-	fmt.Println(rec.Code, rec.Header().Get("Location"), rec.Body.String())
-	fmt.Println(app.OpenAPI().Paths["/pets"].Post.Responses["200"].Headers["Location"].Description)
+	for _, body := range []string{`{"name":"Milo"}`, `{"name":"Rex"}`} {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/pets", strings.NewReader(body)))
+		fmt.Println(rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	fmt.Println(app.OpenAPI().Paths["/pets"].Post.Responses["201"].Headers["Location"].Description)
 	// Output:
-	// 201 /pets/1 {"id":1,"name":"Rex"}
+	// 201 /pets/1 {"id":1,"name":"Milo"}
+	// 200  {"id":1,"name":"Rex"}
 	// URL of the new pet
 }

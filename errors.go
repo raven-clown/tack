@@ -84,6 +84,9 @@ func (e *Error) WithDetail(detail string) *Error {
 
 // Error formats the status and detail, e.g. "404 Not Found: pet not found".
 func (e *Error) Error() string {
+	if e == nil {
+		return "tack: nil *Error"
+	}
 	return fmt.Sprintf("%d %s: %s", e.Status, http.StatusText(e.Status), e.Detail)
 }
 
@@ -91,12 +94,17 @@ func (e *Error) Error() string {
 // Errors without a code only match themselves.
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
-	return ok && e.Code != "" && e.Code == t.Code && e.Status == t.Status
+	return ok && e != nil && t != nil && e.Code != "" && e.Code == t.Code && e.Status == t.Status
 }
 
-// Unwrap returns the handler's original error when tack built e from it,
-// which lets an ErrorHandler inspect domain errors.
-func (e *Error) Unwrap() error { return e.cause }
+// Unwrap returns the error tack built e from: the handler's own error, wrapped
+// or not. It is nil for errors tack created itself.
+func (e *Error) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
 
 type httpStatuser interface {
 	HTTPStatus() int
@@ -105,11 +113,9 @@ type httpStatuser interface {
 // problem maps any error to the *Error tack sends for it.
 func problem(err error) *Error {
 	var te *Error
-	if errors.As(err, &te) && validStatus(te.Status) {
+	if errors.As(err, &te) && te != nil && validStatus(te.Status) {
 		c := *te
-		if err != error(te) { //nolint:errorlint // identity check: the cause is only kept when err wraps te
-			c.cause = err
-		}
+		c.cause = err
 		return &c
 	}
 	var hs httpStatuser
@@ -138,9 +144,9 @@ func (a *App) writeError(w http.ResponseWriter, r *http.Request, err error, rt *
 	if e.Status >= 500 {
 		a.logger.ErrorContext(r.Context(), "tack: handler error", slog.String("route", r.Pattern), slog.Any("error", err))
 	}
-	if a.dev && rt != nil && e.Code != "" && !rt.declared[e.Code] {
+	if a.dev && rt != nil && ((e.Code != "" && !rt.declared[e.Code]) || !rt.statuses[e.Status]) {
 		a.logger.WarnContext(r.Context(), "tack: undeclared error", slog.String("route", rt.name), slog.String("code", e.Code), slog.Int("status", e.Status),
-			slog.String("fix", "add it to the route with tack.Errors so it appears in the docs"))
+			slog.String("fix", "define it with tack.DefineError and add it to the route with tack.Errors so it appears in the docs"))
 	}
 	a.respond(w, r, e)
 }

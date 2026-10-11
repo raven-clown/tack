@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.3.0] - 2026-10-11
 
+### Breaking
+
+- An output struct with a field named `Body` is now a response wrapper (DESIGN.md D3): only `Body` is encoded, an untagged `Status int` sets the status, and `header`-tagged fields become headers; any other exported field panics at registration. A v0.2 output such as `struct{ Body string; Title string }` must rename `Body` to keep sending both fields as JSON.
+
 ### Added
 
 - Route groups: `App.Group(prefix, mw...)`, nestable with `Group.Group`, plus `Group.Use` and `Group.With(opts...)` to share route options. A group prefix may hold wildcards such as `/orgs/{org}`.
@@ -23,7 +27,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Every error tack sends now carries a `code`: `malformed_request` (400), `body_too_large` (413), `unsupported_media_type` (415), `validation_failed` (422), and `internal` (500). The `ProblemDetails` schema gains the optional `code` property.
-- An output struct with a field named `Body` is now treated as a response wrapper (D3), so only `Body` is encoded. Rename the field if it was meant as a JSON property.
 - `examples/petstore` uses a group, `DefineError`, and a `Location` header.
 
 ## [0.2.0] - 2026-10-11

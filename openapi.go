@@ -45,7 +45,7 @@ func (a *App) initOpenAPI(c Config) {
 	}
 	a.registry = schema.NewRegistry()
 	a.opIDs = map[string]string{}
-	a.codes = map[string]int{}
+	a.codes = map[string]*Error{}
 	a.doc = &openapi.Document{
 		OpenAPI:    openapi.Version,
 		Info:       openapi.Info{Title: title, Version: version, Description: c.Description},
@@ -150,9 +150,8 @@ func (a *App) serveSpec(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-// addOperation records the route in the document and returns the error codes
-// it documents.
-func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, cfg routeConfig) ([]string, error) {
+// addOperation records the route and its documented errors in the document.
+func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, cfg routeConfig, errs []*Error) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -169,13 +168,13 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 		op.OperationID = operationID(method, route)
 	}
 	if other, dup := a.opIDs[op.OperationID]; dup {
-		return nil, fmt.Errorf("operation ID %q is already used by %s; set a unique one with tack.OperationID", op.OperationID, other)
+		return fmt.Errorf("operation ID %q is already used by %s; set a unique one with tack.OperationID", op.OperationID, other)
 	}
 
 	for _, p := range plan.Params() {
 		s, err := a.registry.Field(p.Field)
 		if err != nil {
-			return nil, fmt.Errorf("field %s: %w", p.Field.Name, err)
+			return fmt.Errorf("field %s: %w", p.Field.Name, err)
 		}
 		desc := s.Description
 		s.Description = ""
@@ -197,7 +196,7 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 		}
 		s, err := a.registry.Field(f)
 		if err != nil {
-			return nil, fmt.Errorf("field Body: %w", err)
+			return fmt.Errorf("field Body: %w", err)
 		}
 		desc := s.Description
 		s.Description = ""
@@ -209,17 +208,17 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 	}
 
 	ok := &openapi.Response{Description: http.StatusText(cfg.status)}
-	if cfg.status != http.StatusNoContent && cfg.status != http.StatusNotModified {
+	if !noBody(cfg.status) {
 		s, err := a.registry.Schema(out.typ)
 		if err != nil {
-			return nil, fmt.Errorf("output type %s: %w", out.typ, err)
+			return fmt.Errorf("output type %s: %w", out.typ, err)
 		}
 		ok.Content = map[string]*openapi.MediaType{"application/json": {Schema: s}}
 	}
 	for _, h := range out.headers {
 		s, err := a.registry.Field(h.field)
 		if err != nil {
-			return nil, fmt.Errorf("header %s: %w", h.name, err)
+			return fmt.Errorf("header %s: %w", h.name, err)
 		}
 		desc := s.Description
 		s.Description = ""
@@ -230,25 +229,8 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 		ok.Headers[h.name] = &openapi.Header{Description: desc, Required: h.required, Schema: s}
 	}
 	op.Responses[strconv.Itoa(cfg.status)] = ok
-
-	errs := []*Error{{Status: http.StatusInternalServerError, Code: codeInternal, Detail: "internal error"}}
-	if hasBody || len(op.Parameters) > 0 {
-		errs = append(errs,
-			&Error{Status: http.StatusBadRequest, Code: codeMalformed, Detail: "malformed request"},
-			&Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed"})
-	}
-	if hasBody {
-		errs = append(errs,
-			&Error{Status: http.StatusRequestEntityTooLarge, Code: codeTooLarge, Detail: "request body too large"},
-			&Error{Status: http.StatusUnsupportedMediaType, Code: codeMediaType, Detail: "content type is not JSON"})
-	}
-	if len(cfg.security) > 0 {
-		errs = append(errs, ErrUnauthorized)
-	}
-	errs = append(errs, cfg.errs...)
-	codes, err := a.addErrors(op, errs)
-	if err != nil {
-		return nil, err
+	if err := a.addErrors(op, errs); err != nil {
+		return err
 	}
 
 	p := specPath(route)
@@ -271,15 +253,14 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 	}
 	a.opIDs[op.OperationID] = method + " " + route
 	a.spec = nil
-	return codes, nil
+	return nil
 }
 
-// addErrors documents errs on op, one problem schema per code, and returns
-// the codes in order.
-func (a *App) addErrors(op *openapi.Operation, errs []*Error) ([]string, error) {
+// addErrors documents errs on op, one problem schema per code.
+func (a *App) addErrors(op *openapi.Operation, errs []*Error) error {
 	base, err := a.registry.SchemaAs(reflect.TypeFor[Error](), "ProblemDetails")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var (
 		codes    []string
@@ -287,8 +268,8 @@ func (a *App) addErrors(op *openapi.Operation, errs []*Error) ([]string, error) 
 		statuses []int
 	)
 	for _, e := range errs {
-		if status, ok := a.codes[e.Code]; ok && status != e.Status {
-			return nil, fmt.Errorf("error code %q is already defined with status %d; one code has one status", e.Code, status)
+		if first, ok := a.codes[e.Code]; ok && (first.Status != e.Status || first.Detail != e.Detail) {
+			return fmt.Errorf("error code %q was defined with status %d and detail %q; pass the same tack.DefineError value to Errors, not a copy", e.Code, first.Status, first.Detail)
 		}
 		if slices.Contains(codes, e.Code) {
 			continue
@@ -303,9 +284,9 @@ func (a *App) addErrors(op *openapi.Operation, errs []*Error) ([]string, error) 
 		}
 		ref, err := a.registry.Define(problemName(e.Code), s)
 		if err != nil {
-			return nil, fmt.Errorf("error code %q: %w", e.Code, err)
+			return fmt.Errorf("error code %q: %w; rename the type that uses that schema name", e.Code, err)
 		}
-		a.codes[e.Code] = e.Status
+		a.codes[e.Code] = e
 		if _, seen := byStatus[e.Status]; !seen {
 			statuses = append(statuses, e.Status)
 		}
@@ -322,7 +303,7 @@ func (a *App) addErrors(op *openapi.Operation, errs []*Error) ([]string, error) 
 			Content:     map[string]*openapi.MediaType{"application/problem+json": {Schema: s}},
 		}
 	}
-	return codes, nil
+	return nil
 }
 
 // problemName turns "pet_not_found" into "PetNotFoundProblem".

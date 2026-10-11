@@ -151,7 +151,7 @@ app := tack.New(tack.Config{Security: map[string]openapi.SecurityScheme{"bearer"
 
 ### Response headers and status
 
-An output struct with a `Body` field can set the status and headers, all documented in the spec:
+An output struct with a `Body` field can set response headers, which are documented in the spec, and override the status set with `tack.Status`:
 
 ```go
 type CreatePetOutput struct {

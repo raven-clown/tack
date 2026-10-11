@@ -19,7 +19,7 @@ type Group struct {
 
 func newGroup(parent Router, prefix string, mw []func(http.Handler) http.Handler) *Group {
 	if prefix != "" && (!strings.HasPrefix(prefix, "/") || strings.HasSuffix(prefix, "/")) {
-		panic(fmt.Sprintf("tack: group prefix %q must start with \"/\" and not end with one", prefix))
+		panic(fmt.Sprintf("tack: group prefix %q must start with \"/\" and not end with one; use \"\" for a group without a prefix", prefix))
 	}
 	return &Group{parent: parent, path: prefix, mw: slices.Clone(mw)}
 }

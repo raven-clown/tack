@@ -12,7 +12,12 @@ import (
 
 type level int
 
-func (l level) MarshalText() ([]byte, error) { return []byte(fmt.Sprintf("L%d", int(l))), nil }
+func (l level) MarshalText() ([]byte, error) {
+	if l < 0 {
+		return nil, fmt.Errorf("negative level")
+	}
+	return []byte(fmt.Sprintf("L%d", int(l))), nil
+}
 
 type createdPet struct {
 	Status   int
@@ -42,6 +47,10 @@ func TestOutputHeadersAndStatus(t *testing.T) {
 			out.Flag = true
 		case "bad":
 			out.Status = 99
+		case "redirect":
+			out.Status = http.StatusNotFound
+		case "broken":
+			out.Level = -1
 		}
 		return out, nil
 	}, Status(http.StatusCreated))
@@ -67,6 +76,8 @@ func TestOutputHeadersAndStatus(t *testing.T) {
 		{"defaults", "POST", "/pets", `{"name":"min"}`, 201, `{"id":0,"name":"min"}`,
 			map[string][]string{"X-Count": {"3"}, "X-Flag": {"false"}}, []string{"Location", "Etag", "Warning"}},
 		{"bad status", "POST", "/pets", `{"name":"bad"}`, 500, `{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`, nil, nil},
+		{"error status", "POST", "/pets", `{"name":"redirect"}`, 500, `{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`, nil, []string{"X-Count"}},
+		{"failing marshaler", "POST", "/pets", `{"name":"broken"}`, 500, `{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`, nil, []string{"X-Count", "Location"}},
 		{"status no content", "GET", "/empty", "", 204, "", nil, []string{"Content-Type"}},
 	}
 	for _, tt := range tests {
@@ -156,6 +167,17 @@ func TestOutputPanics(t *testing.T) {
 				}{}, nil
 			})
 		}, `field X: header tag needs a name, e.g. header:"Location"`},
+		{"interface header", func(a *App) {
+			Get(a, "/x", func(context.Context, struct{}) (struct {
+				Body Pet
+				X    fmt.Stringer `header:"X"`
+			}, error) {
+				return struct {
+					Body Pet
+					X    fmt.Stringer `header:"X"`
+				}{}, nil
+			})
+		}, "field X: unsupported header type fmt.Stringer"},
 		{"unsupported header type", func(a *App) {
 			Get(a, "/x", func(context.Context, struct{}) (struct {
 				Body Pet
@@ -212,16 +234,10 @@ func TestPlainOutputsStayPlain(t *testing.T) {
 	}
 }
 
-func TestFormatterTextMarshalerError(t *testing.T) {
-	format, _, err := formatter(reflect.TypeFor[failingText]())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := format(reflect.ValueOf(failingText{})); got != nil {
-		t.Fatalf("got %q, want nil", got)
+func TestResetContentSpec(t *testing.T) {
+	app := New(Config{})
+	Post(app, "/reset", func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil }, Status(http.StatusResetContent))
+	if res := app.OpenAPI().Paths["/reset"].Post.Responses["205"]; res.Content != nil {
+		t.Fatalf("205 must document no body, got %+v", res.Content)
 	}
 }
-
-type failingText struct{}
-
-func (failingText) MarshalText() ([]byte, error) { return nil, fmt.Errorf("no") }

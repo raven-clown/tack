@@ -34,6 +34,7 @@ type routeConfig struct {
 type route struct {
 	name     string
 	declared map[string]bool
+	statuses map[int]bool
 }
 
 // Status sets the status code of successful responses. The default is 200.
@@ -97,9 +98,9 @@ func Errors(errs ...*Error) RouteOption {
 // In must be a struct whose fields use path, query, header, or cookie tags, or
 // a field named Body for the JSON body. Out is encoded as JSON, unless it is a
 // struct with a field named Body: then Body is encoded, an int field named
-// Status overrides the status code when not zero, and header-tagged fields
-// become response headers. Get panics if In does not match path or Out is
-// not a valid output type.
+// Status overrides the status code when not zero (it must be 2xx or 3xx), and
+// header-tagged fields become response headers. Get panics if In does not
+// match path or Out is not a valid output type.
 func Get[In, Out any](r Router, path string, h func(context.Context, In) (Out, error), opts ...RouteOption) {
 	handle(r, http.MethodGet, path, h, opts)
 }
@@ -127,8 +128,11 @@ func Delete[In, Out any](r Router, path string, h func(context.Context, In) (Out
 func handle[In, Out any](r Router, method, path string, h func(context.Context, In) (Out, error), opts []RouteOption) {
 	a := r.app()
 	if prefix := r.prefix(); prefix != "" {
-		if path == "/" {
+		switch {
+		case path == "/":
 			panic(fmt.Sprintf("tack: %s %s/: path \"/\" under a group matches every path below %s/; use \"/{$}\" for %s/ alone or \"\" for %s", method, prefix, prefix, prefix, prefix))
+		case path != "" && !strings.HasPrefix(path, "/"):
+			panic(fmt.Sprintf("tack: %s %s: path %q under group %s must start with \"/\"", method, prefix+path, path, prefix))
 		}
 		path = prefix + path
 	}
@@ -183,7 +187,12 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		prefix = t.Name() + "."
 	}
 
-	rt := &route{name: name, declared: map[string]bool{}}
+	errs := documentedErrors(plan, cfg)
+	rt := &route{name: name, declared: map[string]bool{}, statuses: map[int]bool{cfg.status: true}}
+	for _, e := range errs {
+		rt.declared[e.Code] = true
+		rt.statuses[e.Status] = true
+	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var in In
 		if plan.HasBody() {
@@ -208,9 +217,13 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 			a.writeJSON(w, req, rt, cfg.status, res)
 			return
 		}
-		status, headers, body := out.split(res, cfg.status)
-		if status < 200 || status > 599 {
-			a.writeError(w, req, fmt.Errorf("output Status %d is not a valid HTTP status", status), rt)
+		status, headers, body, err := out.split(res, cfg.status)
+		if err != nil {
+			a.writeError(w, req, err, rt)
+			return
+		}
+		if status < 200 || status > 399 {
+			a.writeError(w, req, fmt.Errorf("output Status %d is not a 2xx or 3xx code; return an error for failures", status), rt)
 			return
 		}
 		for i, values := range headers {
@@ -224,13 +237,30 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 	if err := register(a.mux, name, chain(mws, handler)); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v; wildcards must be whole segments like {id}, and each method and path can be registered once", name, err))
 	}
-	codes, err := a.addOperation(method, path, plan, out, cfg)
-	if err != nil {
+	if err := a.addOperation(method, path, plan, out, cfg, errs); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
-	for _, c := range codes {
-		rt.declared[c] = true
+}
+
+// documentedErrors lists the errors an operation documents: tack's own, a
+// 401 when the route has security, and the ones declared with Errors.
+func documentedErrors(plan *bind.Plan, cfg routeConfig) []*Error {
+	errs := []*Error{{Status: http.StatusInternalServerError, Code: codeInternal, Detail: "internal error"}}
+	_, _, hasBody := plan.Body()
+	if hasBody || len(plan.Params()) > 0 {
+		errs = append(errs,
+			&Error{Status: http.StatusBadRequest, Code: codeMalformed, Detail: "malformed request"},
+			&Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed"})
 	}
+	if hasBody {
+		errs = append(errs,
+			&Error{Status: http.StatusRequestEntityTooLarge, Code: codeTooLarge, Detail: "request body too large"},
+			&Error{Status: http.StatusUnsupportedMediaType, Code: codeMediaType, Detail: "content type is not JSON"})
+	}
+	if len(cfg.security) > 0 {
+		errs = append(errs, ErrUnauthorized)
+	}
+	return append(errs, cfg.errs...)
 }
 
 // register turns ServeMux panics into errors.

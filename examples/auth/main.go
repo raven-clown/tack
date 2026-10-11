@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/raven-clown/tack"
 	"github.com/raven-clown/tack/openapi"
@@ -37,13 +37,16 @@ type claims struct {
 
 type userKey struct{}
 
-// auth holds the accounts, their passwords, and the signing secret.
+// auth holds the accounts, their bcrypt password hashes, and the signing secret.
 type auth struct {
-	users     map[string]User
-	passwords map[string]string
-	secret    []byte
-	now       func() time.Time
+	users  map[string]User
+	hashes map[string][]byte
+	secret []byte
+	now    func() time.Time
 }
+
+// dummyHash keeps the login timing the same for unknown users.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("unknown"), bcrypt.MinCost)
 
 type loginInput struct {
 	Body struct {
@@ -60,7 +63,11 @@ type Token struct {
 
 func (a *auth) login(_ context.Context, in loginInput) (Token, error) {
 	u, ok := a.users[in.Body.Username]
-	if !ok || subtle.ConstantTimeCompare([]byte(a.passwords[in.Body.Username]), []byte(in.Body.Password)) != 1 {
+	hash := a.hashes[in.Body.Username]
+	if !ok {
+		hash = dummyHash
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(in.Body.Password)); err != nil || !ok {
 		return Token{}, ErrBadCredentials
 	}
 	exp := a.now().Add(time.Hour)
@@ -79,15 +86,17 @@ func (a *auth) login(_ context.Context, in loginInput) (Token, error) {
 func (a *auth) requireJWT(app *tack.App) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok {
+			scheme, raw, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+			if !strings.EqualFold(scheme, "Bearer") || raw == "" {
+				w.Header().Set("WWW-Authenticate", "Bearer")
 				app.WriteError(w, r, tack.ErrUnauthorized)
 				return
 			}
 			var c claims
 			_, err := jwt.ParseWithClaims(raw, &c, func(*jwt.Token) (any, error) { return a.secret, nil },
-				jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithTimeFunc(a.now))
+				jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired(), jwt.WithTimeFunc(a.now))
 			if err != nil {
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 				app.WriteError(w, r, tack.ErrUnauthorized.WithDetail("invalid or expired token"))
 				return
 			}
@@ -130,11 +139,15 @@ func main() {
 		_, _ = rand.Read(b)
 		password = hex.EncodeToString(b)
 	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatal(err)
+	}
 	a := &auth{
-		users:     map[string]User{"ada": {ID: "ada", Name: "Ada Lovelace"}},
-		passwords: map[string]string{"ada": password},
-		secret:    secret,
-		now:       time.Now,
+		users:  map[string]User{"ada": {ID: "ada", Name: "Ada Lovelace"}},
+		hashes: map[string][]byte{"ada": hash},
+		secret: secret,
+		now:    time.Now,
 	}
 	srv := &http.Server{
 		Addr:              ":8080",

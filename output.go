@@ -22,7 +22,7 @@ type headerField struct {
 	field    reflect.StructField
 	name     string
 	index    []int
-	format   func(reflect.Value) []string
+	format   func(reflect.Value) ([]string, error)
 	required bool
 }
 
@@ -83,7 +83,7 @@ func newOutput(t reflect.Type) (*output, error) {
 func (o *output) wrapped() bool { return o.body != nil }
 
 // split returns the status, header values, and body of res.
-func (o *output) split(res any, status int) (int, [][]string, any) {
+func (o *output) split(res any, status int) (int, [][]string, any, error) {
 	v := reflect.ValueOf(res)
 	if o.status != nil {
 		if s := int(v.FieldByIndex(o.status).Int()); s != 0 {
@@ -94,25 +94,34 @@ func (o *output) split(res any, status int) (int, [][]string, any) {
 	if len(o.headers) > 0 {
 		headers = make([][]string, len(o.headers))
 		for i := range o.headers {
-			headers[i] = o.headers[i].format(v.FieldByIndex(o.headers[i].index))
+			values, err := o.headers[i].format(v.FieldByIndex(o.headers[i].index))
+			if err != nil {
+				return 0, nil, nil, fmt.Errorf("formatting header %s: %w", o.headers[i].name, err)
+			}
+			headers[i] = values
 		}
 	}
-	return status, headers, v.FieldByIndex(o.body).Interface()
+	return status, headers, v.FieldByIndex(o.body).Interface(), nil
 }
 
 // formatter returns a function that turns a header field value into header
 // lines, and whether the header is always present. Nil pointers, empty slices,
 // and empty strings produce no header.
-func formatter(t reflect.Type) (format func(reflect.Value) []string, required bool, err error) {
+func formatter(t reflect.Type) (format func(reflect.Value) ([]string, error), required bool, err error) {
+	one := func(f func(reflect.Value) string) func(reflect.Value) ([]string, error) {
+		return func(v reflect.Value) ([]string, error) { return []string{f(v)}, nil }
+	}
 	switch {
+	case t.Kind() == reflect.Interface:
+		return nil, false, fmt.Errorf("unsupported header type %s", t)
 	case t.Kind() == reflect.Pointer:
 		elem, _, err := formatter(t.Elem())
 		if err != nil {
 			return nil, false, err
 		}
-		return func(v reflect.Value) []string {
+		return func(v reflect.Value) ([]string, error) {
 			if v.IsNil() {
-				return nil
+				return nil, nil
 			}
 			return elem(v.Elem())
 		}, false, nil
@@ -121,19 +130,21 @@ func formatter(t reflect.Type) (format func(reflect.Value) []string, required bo
 		if err != nil {
 			return nil, false, err
 		}
-		return func(v reflect.Value) []string {
+		return func(v reflect.Value) ([]string, error) {
 			var out []string
 			for i := range v.Len() {
-				out = append(out, elem(v.Index(i))...)
+				values, err := elem(v.Index(i))
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, values...)
 			}
-			return out
+			return out, nil
 		}, false, nil
 	case t == timeType:
-		return func(v reflect.Value) []string {
-			return []string{v.Interface().(time.Time).Format(time.RFC3339)}
-		}, true, nil
+		return one(func(v reflect.Value) string { return v.Interface().(time.Time).Format(time.RFC3339) }), true, nil
 	case t.Implements(textMarshalerType) || reflect.PointerTo(t).Implements(textMarshalerType):
-		return func(v reflect.Value) []string {
+		return func(v reflect.Value) ([]string, error) {
 			if !v.CanAddr() {
 				c := reflect.New(t).Elem()
 				c.Set(v)
@@ -141,28 +152,28 @@ func formatter(t reflect.Type) (format func(reflect.Value) []string, required bo
 			}
 			b, err := v.Addr().Interface().(encoding.TextMarshaler).MarshalText()
 			if err != nil {
-				return nil
+				return nil, err
 			}
-			return []string{string(b)}
+			return []string{string(b)}, nil
 		}, true, nil
 	}
 	switch t.Kind() {
 	case reflect.String:
-		return func(v reflect.Value) []string {
+		return func(v reflect.Value) ([]string, error) {
 			if s := v.String(); s != "" {
-				return []string{s}
+				return []string{s}, nil
 			}
-			return nil
+			return nil, nil
 		}, false, nil
 	case reflect.Bool:
-		return func(v reflect.Value) []string { return []string{strconv.FormatBool(v.Bool())} }, true, nil
+		return one(func(v reflect.Value) string { return strconv.FormatBool(v.Bool()) }), true, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return func(v reflect.Value) []string { return []string{strconv.FormatInt(v.Int(), 10)} }, true, nil
+		return one(func(v reflect.Value) string { return strconv.FormatInt(v.Int(), 10) }), true, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return func(v reflect.Value) []string { return []string{strconv.FormatUint(v.Uint(), 10)} }, true, nil
+		return one(func(v reflect.Value) string { return strconv.FormatUint(v.Uint(), 10) }), true, nil
 	case reflect.Float32, reflect.Float64:
 		bits := t.Bits()
-		return func(v reflect.Value) []string { return []string{strconv.FormatFloat(v.Float(), 'g', -1, bits)} }, true, nil
+		return one(func(v reflect.Value) string { return strconv.FormatFloat(v.Float(), 'g', -1, bits) }), true, nil
 	}
 	return nil, false, fmt.Errorf("unsupported header type %s", t)
 }

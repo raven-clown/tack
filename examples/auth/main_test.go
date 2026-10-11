@@ -8,14 +8,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func testApp(now func() time.Time) (*httptest.Server, func()) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
 	a := &auth{
-		users:     map[string]User{"ada": {ID: "ada", Name: "Ada Lovelace"}},
-		passwords: map[string]string{"ada": "hunter2"},
-		secret:    []byte("test secret"),
-		now:       now,
+		users:  map[string]User{"ada": {ID: "ada", Name: "Ada Lovelace"}},
+		hashes: map[string][]byte{"ada": hash},
+		secret: []byte("test secret"),
+		now:    now,
 	}
 	srv := httptest.NewServer(newApp(a))
 	return srv, srv.Close
@@ -90,6 +93,25 @@ func TestLoginAndMe(t *testing.T) {
 				t.Fatalf("got %d %s\nwant %d %s", status, body, tt.wantStatus, tt.wantBody)
 			}
 		})
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/me", nil)
+	req.Header.Set("Authorization", "bearer "+tok.Token)
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("lower-case scheme: %d", res.StatusCode)
+	}
+	res, err = srv.Client().Get(srv.URL + "/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.Header.Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("WWW-Authenticate = %q", res.Header.Get("WWW-Authenticate"))
 	}
 
 	clock = clock.Add(2 * time.Hour)

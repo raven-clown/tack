@@ -53,6 +53,7 @@ func TestErrorIsAndWithDetail(t *testing.T) {
 		want   bool
 	}{
 		{"same value", errGone, errGone, true},
+		{"nil target", errGone, (*Error)(nil), false},
 		{"copy with detail", detailed, errGone, true},
 		{"wrapped copy", wrapped, errGone, true},
 		{"other code", errRetired, errGone, false},
@@ -73,6 +74,9 @@ func TestErrorIsAndWithDetail(t *testing.T) {
 	if errGone.Unwrap() != nil {
 		t.Fatal("a defined error has no cause")
 	}
+	if !errors.Is(problem(errGone).Unwrap(), errGone) {
+		t.Fatal("problem() should keep the returned error as the cause")
+	}
 }
 
 func TestProblem(t *testing.T) {
@@ -85,7 +89,8 @@ func TestProblem(t *testing.T) {
 		wantDetail string
 		wantCause  error
 	}{
-		{"defined", errGone, 410, "pet_gone", "pet is gone", nil},
+		{"defined", errGone, 410, "pet_gone", "pet is gone", errGone},
+		{"typed nil", (*Error)(nil), 500, "internal", "", (*Error)(nil)},
 		{"wrapped defined", fmt.Errorf("x: %w", errGone), 410, "pet_gone", "pet is gone", fmt.Errorf("x: %w", errGone)},
 		{"status interface", notFoundError{}, 404, "", "pet is gone", notFoundError{}},
 		{"status interface 5xx", unavailableError{}, 503, "", "", unavailableError{}},
@@ -97,6 +102,12 @@ func TestProblem(t *testing.T) {
 			e := problem(tt.err)
 			if e.Status != tt.wantStatus || e.Code != tt.wantCode || e.Detail != tt.wantDetail {
 				t.Fatalf("got %d %q %q", e.Status, e.Code, e.Detail)
+			}
+			if tt.name == "typed nil" {
+				if e.Unwrap() == nil {
+					t.Fatal("typed nil cause lost")
+				}
+				return
 			}
 			if (tt.wantCause == nil) != (e.Unwrap() == nil) || (tt.wantCause != nil && e.Unwrap().Error() != tt.wantCause.Error()) {
 				t.Fatalf("cause = %v, want %v", e.Unwrap(), tt.wantCause)
@@ -118,6 +129,13 @@ func TestTypedErrorResponse(t *testing.T) {
 			return Pet{}, errGone.WithDetail("pet 2 is gone")
 		case 3:
 			return Pet{}, errTeapot
+		case 4:
+			return Pet{}, NewError(http.StatusConflict, "no code, undocumented status")
+		case 5:
+			return Pet{}, NewError(http.StatusGone, "no code, documented status")
+		case 6:
+			var typedNil *Error
+			return Pet{}, typedNil
 		}
 		return Pet{ID: in.ID}, nil
 	}, Errors(errGone))
@@ -130,6 +148,9 @@ func TestTypedErrorResponse(t *testing.T) {
 		{"/pets/1", `{"type":"about:blank","title":"Gone","status":410,"code":"pet_gone","detail":"pet is gone"}`, false},
 		{"/pets/2", `{"type":"about:blank","title":"Gone","status":410,"code":"pet_gone","detail":"pet 2 is gone"}`, false},
 		{"/pets/3", `{"type":"about:blank","title":"I'm a teapot","status":418,"code":"teapot","detail":"short and stout"}`, true},
+		{"/pets/4", `{"type":"about:blank","title":"Conflict","status":409,"detail":"no code, undocumented status"}`, true},
+		{"/pets/5", `{"type":"about:blank","title":"Gone","status":410,"detail":"no code, documented status"}`, false},
+		{"/pets/6", `{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
@@ -138,7 +159,7 @@ func TestTypedErrorResponse(t *testing.T) {
 			if rec.Body.String() != tt.wantBody {
 				t.Errorf("body = %s\nwant %s", rec.Body, tt.wantBody)
 			}
-			warned := strings.Contains(logs.String(), "tack: undeclared error") && strings.Contains(logs.String(), "code=teapot")
+			warned := strings.Contains(logs.String(), "tack: undeclared error")
 			if warned != tt.wantWarn {
 				t.Errorf("warned = %v, want %v: %s", warned, tt.wantWarn, logs.String())
 			}
@@ -162,20 +183,26 @@ func TestErrorsOptionPanics(t *testing.T) {
 		do   func(a *App)
 		want string
 	}{
-		{"nil", func(a *App) { Get(a, "/x", nop, Errors(nil)) }, "tack: GET /x: Errors needs errors made with tack.DefineError, got <nil>"},
+		{"nil", func(a *App) { Get(a, "/x", nop, Errors(nil)) }, "tack: GET /x: Errors needs errors made with tack.DefineError, got tack: nil *Error"},
 		{"no code", func(a *App) { Get(a, "/x", nop, Errors(NewError(404, "x"))) }, "Errors needs errors made with tack.DefineError"},
 		{"bad status", func(a *App) { Get(a, "/x", nop, Errors(&Error{Status: 200, Code: "ok"})) }, "Errors needs errors made with tack.DefineError"},
 		{"conflicting definition", func(a *App) {
 			Get(a, "/a", nop, Errors(errGone))
 			Get(a, "/b", nop, Errors(&Error{Status: http.StatusNotFound, Code: "pet_gone", Detail: "pet is gone"}))
-		}, `tack: GET /b: error code "pet_gone" is already defined with status 410; one code has one status`},
-		{"conflicting detail", func(a *App) {
+		}, `tack: GET /b: error code "pet_gone" was defined with status 410 and detail "pet is gone"; pass the same tack.DefineError value to Errors, not a copy`},
+		{"detail copy", func(a *App) {
 			Get(a, "/a", nop, Errors(errGone))
-			Get(a, "/b", nop, Errors(DefineError(http.StatusGone, "pet_gone", "other text")))
-		}, `tack: GET /b: error code "pet_gone": schema "PetGoneProblem" is already defined differently`},
+			Get(a, "/b", nop, Errors(errGone.WithDetail("pet 7 is gone")))
+		}, `tack: GET /b: error code "pet_gone" was defined with status 410 and detail "pet is gone"; pass the same tack.DefineError value to Errors, not a copy`},
 		{"reserved code", func(a *App) {
 			Get(a, "/a", nop, Errors(DefineError(400, "internal", "mine")))
-		}, `error code "internal" is already defined with status 500`},
+		}, `error code "internal" was defined with status 500`},
+		{"schema name taken by a type", func(a *App) {
+			type InternalProblem struct {
+				X int `json:"x"`
+			}
+			Get(a, "/a", func(context.Context, struct{}) (InternalProblem, error) { return InternalProblem{}, nil })
+		}, `tack: GET /a: error code "internal": schema "InternalProblem" is already defined differently; rename the type that uses that schema name`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,6 +277,15 @@ func TestErrorHandler(t *testing.T) {
 	want := "410 pet_gone cause=wrapped: 410 Gone: pet is gone"
 	if len(seen) != 4 || seen[2] != want || seen[3] != "500 internal cause=boom" {
 		t.Fatalf("seen = %q", seen)
+	}
+	direct := New(Config{ErrorHandler: func(w http.ResponseWriter, _ *http.Request, e *Error) {
+		seen = append(seen, fmt.Sprintf("direct %v", errors.Is(e, errGone) && e.Unwrap() != nil))
+		w.WriteHeader(e.Status)
+	}})
+	Get(direct, "/x", func(context.Context, struct{}) (struct{}, error) { return struct{}{}, errGone })
+	serveOnce(direct, "GET", "/x", "")
+	if seen[len(seen)-1] != "direct true" {
+		t.Fatalf("a directly returned sentinel must reach ErrorHandler as the cause: %q", seen)
 	}
 }
 
