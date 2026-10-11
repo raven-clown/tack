@@ -98,8 +98,12 @@ func run(b *testing.B, h http.Handler, method, url, body string) {
 	}
 }
 
-// TestAllocations holds the request path to its allocation budget.
+// TestAllocations holds the request path to its allocation budget. CI runs
+// it in its own step without the race detector, which allocates on its own.
 func TestAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are not meaningful under the race detector")
+	}
 	app := benchApp()
 	empty := New(Config{})
 	Get(empty, "/ping", func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil })
