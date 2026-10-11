@@ -11,14 +11,14 @@ permissions:
 jobs:
   test:
     name: Test (Go ${{ matrix.go }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
         go: [oldstable, stable]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
       - name: Build
@@ -30,10 +30,10 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - uses: golangci/golangci-lint-action@v9
