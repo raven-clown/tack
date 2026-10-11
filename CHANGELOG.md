@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The request path allocates less: the query string is scanned for the bound fields instead of parsed into a map, route inputs are pooled, and responses are encoded by a pooled encoder. A route with a path value, a query value, a default, and validation went from 10 allocations and 504 bytes per request to 4 and 48, about a third faster; see BENCHMARKS.md. Behavior is unchanged, and malformed query pairs are skipped the way `url.ParseQuery` skips them.
+- The benchmarks write to a discarding `ResponseWriter`, so their numbers now measure the handlers rather than `httptest.ResponseRecorder`.
+
+### Fixed
+
+- Two tests that failed on Go 1.27 and in CI: one depended on the exact text of a `json` error, and `tack new`'s test disabled the module proxy, which the generated project's `go mod tidy` needs.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added

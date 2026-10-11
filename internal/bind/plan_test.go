@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -419,6 +420,42 @@ func TestFormPlan(t *testing.T) {
 	} {
 		if _, err := New(tt.typ, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: got %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}
+
+func TestQueryValues(t *testing.T) {
+	tests := []struct {
+		raw, name string
+		all       bool
+		first     string
+		values    []string
+		found     bool
+	}{
+		{"", "a", false, "", nil, false},
+		{"a=1", "a", false, "1", nil, true},
+		{"b=2&a=1&a=3", "a", false, "1", nil, true},
+		{"b=2&a=1&a=3", "a", true, "1", []string{"1", "3"}, true},
+		{"a", "a", false, "", nil, true},
+		{"a=", "a", false, "", nil, true},
+		{"&&a=1&", "a", false, "1", nil, true},
+		{"a=x%20y&a=p+q", "a", true, "x y", []string{"x y", "p q"}, true},
+		{"%61=enc", "a", false, "enc", nil, true},
+		{"a=%zz&a=ok", "a", false, "ok", nil, true},
+		{"%zz=1&a=ok", "a", false, "ok", nil, true},
+		{"a=1;b=2&a=3", "a", false, "3", nil, true},
+		{"ab=1&a=2", "a", false, "2", nil, true},
+		{"a=1", "b", true, "", nil, false},
+	}
+	for _, tt := range tests {
+		first, values, found := queryValues(tt.raw, tt.name, tt.all)
+		if first != tt.first || found != tt.found || !reflect.DeepEqual(values, tt.values) {
+			t.Errorf("queryValues(%q, %q, %v) = %q, %v, %v; want %q, %v, %v", tt.raw, tt.name, tt.all, first, values, found, tt.first, tt.values, tt.found)
+		}
+		// The same answer url.ParseQuery gives.
+		parsed, _ := url.ParseQuery(tt.raw)
+		if got := parsed[tt.name]; found != (len(got) > 0) || (found && got[0] != first) || (tt.all && found && !reflect.DeepEqual(got, values)) {
+			t.Errorf("queryValues(%q, %q) disagrees with url.ParseQuery: %v", tt.raw, tt.name, got)
 		}
 	}
 }

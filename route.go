@@ -1,6 +1,7 @@
 package tack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/raven-clown/tack/internal/bind"
 	"github.com/raven-clown/tack/openapi"
@@ -198,8 +200,14 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		rt.statuses[e.Status] = true
 	}
 	hasForm, _ := plan.HasForm()
+	// Inputs are pooled: binding and validation need a pointer, which would
+	// otherwise move every request's input to the heap. The handler gets a
+	// copy, so the pooled value is never shared.
+	inputs := sync.Pool{New: func() any { return new(In) }}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		var in In
+		inp := inputs.Get().(*In)
+		*inp = *new(In)
+		defer inputs.Put(inp)
 		if plan.HasBody() || hasForm {
 			if req.ContentLength > a.maxBody {
 				a.respond(w, req, &Error{Status: http.StatusRequestEntityTooLarge, Code: codeTooLarge, Detail: fmt.Sprintf("request body exceeds %d bytes", a.maxBody)})
@@ -214,17 +222,17 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 				}
 			}()
 		}
-		if err := plan.Bind(req, &in); err != nil {
+		if err := plan.Bind(req, inp); err != nil {
 			a.writeBindError(w, req, err)
 			return
 		}
 		if check {
-			if details := a.validateInput(&in, prefix, locs); details != nil {
+			if details := a.validateInput(inp, prefix, locs); details != nil {
 				a.respond(w, req, &Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed", Errors: details})
 				return
 			}
 		}
-		res, err := h(req.Context(), in)
+		res, err := h(req.Context(), *inp)
 		if err != nil {
 			a.writeError(w, req, err, rt)
 			return
@@ -321,17 +329,40 @@ func (a *App) writeBindError(w http.ResponseWriter, r *http.Request, err error) 
 	a.respond(w, r, e)
 }
 
+// encoder is a buffer and a JSON encoder bound to it, pooled so that a
+// response is encoded without allocating.
+type encoder struct {
+	buf bytes.Buffer
+	enc *json.Encoder
+}
+
+var encoders = sync.Pool{New: func() any {
+	e := &encoder{}
+	e.enc = json.NewEncoder(&e.buf)
+	return e
+}}
+
+// maxPooledBuffer keeps the pool from holding on to one huge response.
+const maxPooledBuffer = 64 << 10
+
 func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, rt *route, status int, v any) {
 	if noBody(status) {
 		w.WriteHeader(status)
 		return
 	}
-	b, err := json.Marshal(v)
-	if err != nil {
+	e := encoders.Get().(*encoder)
+	e.buf.Reset()
+	if err := e.enc.Encode(v); err != nil {
+		encoders.Put(e)
 		a.writeError(w, r, fmt.Errorf("encoding response: %w", err), rt)
 		return
 	}
+	b := e.buf.Bytes()
+	b = b[:len(b)-1] // Encode ends with a newline.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
+	if e.buf.Cap() <= maxPooledBuffer {
+		encoders.Put(e)
+	}
 }

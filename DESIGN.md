@@ -413,6 +413,8 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Event encoding (v0.6) | `Event.Name` and `Event.ID` lines are flattened to one line each | SSE fields cannot span lines; data is JSON so it never does |
 | `tack new` and versions (v0.6) | The template's `go.mod` names no tack version; `go mod tidy` picks the latest | The command cannot know which version the project should pin, and a stale pin would be worse than none |
 | Release binaries (v0.6) | Built when a release is published, from plain `go build` in a workflow, and attached with checksums | No extra tooling to configure, and the maintainer keeps writing the release notes |
+| Query scanning (v0.7) | The raw query is scanned per bound field, skipping what `url.ParseQuery` skips, instead of building the map | A route binds a few names; a map of every pair is work and allocations thrown away each request |
+| Pooled inputs and encoders (v0.7) | One `sync.Pool` of the input struct per route and one of JSON encoders app-wide; the handler gets a copy of the input | Binding needs a pointer, which would otherwise heap-allocate every request; a copy keeps handlers free of aliasing rules |
 
 ## Prototype
 

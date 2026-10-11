@@ -33,10 +33,26 @@ func BenchmarkEmptyHandler(b *testing.B) {
 	})
 }
 
+// discard is the cheapest ResponseWriter possible, so the benchmarks measure
+// the handlers rather than httptest.ResponseRecorder.
+type discard struct {
+	header http.Header
+	status int
+}
+
+func (d *discard) Header() http.Header         { return d.header }
+func (d *discard) Write(p []byte) (int, error) { return len(p), nil }
+func (d *discard) WriteHeader(status int)      { d.status = status }
+
 func run(b *testing.B, h http.Handler, url string) {
 	req := httptest.NewRequest(http.MethodGet, url, nil)
+	w := &discard{header: http.Header{}}
 	b.ReportAllocs()
 	for b.Loop() {
-		h.ServeHTTP(httptest.NewRecorder(), req)
+		clear(w.header)
+		h.ServeHTTP(w, req)
+	}
+	if w.status != 0 && w.status != http.StatusOK {
+		b.Fatalf("status %d", w.status)
 	}
 }

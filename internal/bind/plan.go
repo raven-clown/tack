@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"reflect"
 	"strings"
 )
@@ -301,18 +302,14 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 		}
 	}
 	if len(p.steps) > 0 {
-		var query map[string][]string
-		if p.hasQuery {
-			query = r.URL.Query()
-		}
 		for i := range p.steps {
 			s := &p.steps[i]
 			if s.file {
 				bindFiles(r, v.FieldByIndex(s.index), s)
 				continue
 			}
-			values := lookup(r, query, s)
-			if len(values) == 0 || (len(values) == 1 && values[0] == "") {
+			first, values, found := lookup(r, s)
+			if !found || (!s.slice && first == "") || (s.slice && len(values) == 1 && values[0] == "") {
 				if s.def != nil {
 					setDefault(v.FieldByIndex(s.index), *s.def)
 				}
@@ -320,7 +317,7 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 			}
 			fv := v.FieldByIndex(s.index)
 			if !s.slice {
-				if err := s.set(fv, values[0]); err != nil {
+				if err := s.set(fv, first); err != nil {
 					fields = append(fields, FieldError{s.loc, err.Error()})
 				}
 				continue
@@ -375,23 +372,69 @@ func setDefault(dst, def reflect.Value) {
 	dst.Set(p)
 }
 
-func lookup(r *http.Request, query map[string][]string, s *step) []string {
+// lookup returns the request's values for s: the first one for single
+// fields, all of them for slices. It allocates only for slices.
+func lookup(r *http.Request, s *step) (first string, values []string, found bool) {
 	switch s.src {
 	case srcPath:
-		return []string{r.PathValue(s.name)}
+		return r.PathValue(s.name), nil, true
 	case srcQuery:
-		return query[s.name]
+		return queryValues(r.URL.RawQuery, s.name, s.slice)
 	case srcHeader:
-		return r.Header[s.name]
+		values = r.Header[s.name]
 	case srcForm:
-		return r.PostForm[s.name]
+		values = r.PostForm[s.name]
 	default:
 		c, err := r.Cookie(s.name)
 		if err != nil {
-			return nil
+			return "", nil, false
 		}
-		return []string{c.Value}
+		return c.Value, nil, true
 	}
+	if len(values) == 0 {
+		return "", nil, false
+	}
+	return values[0], values, true
+}
+
+// queryValues scans a raw query for name without building the whole map, the
+// way url.ParseQuery would read it: pairs split on "&", pairs holding ";"
+// and pairs that do not unescape are skipped. With all set it collects every
+// value; otherwise it stops at the first.
+func queryValues(raw, name string, all bool) (first string, values []string, found bool) {
+	for raw != "" {
+		var pair string
+		pair, raw, _ = strings.Cut(raw, "&")
+		if pair == "" || strings.Contains(pair, ";") {
+			continue
+		}
+		key, value, _ := strings.Cut(pair, "=")
+		if strings.ContainsAny(key, "%+") {
+			k, err := url.QueryUnescape(key)
+			if err != nil {
+				continue
+			}
+			key = k
+		}
+		if key != name {
+			continue
+		}
+		if strings.ContainsAny(value, "%+") {
+			v, err := url.QueryUnescape(value)
+			if err != nil {
+				continue
+			}
+			value = v
+		}
+		if !found {
+			first, found = value, true
+			if !all {
+				return first, nil, true
+			}
+		}
+		values = append(values, value)
+	}
+	return first, values, found
 }
 
 // parseForm reads a multipart or URL-encoded form body. A form with files
