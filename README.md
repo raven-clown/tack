@@ -9,7 +9,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/raven-clown/tack/badge)](https://scorecard.dev/viewer/?uri=github.com/raven-clown/tack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **Early development.** tack is pre-1.0. The API may change between minor versions until v1.0. See the [roadmap](#roadmap).
+> **Release candidate.** v0.9 is the API that v1.0 will freeze: every exported identifier was reviewed ([API_REVIEW.md](API_REVIEW.md)), the planned add-ons were checked against it ([FUTURE_FIT.md](FUTURE_FIT.md)), and nothing changes before v1.0 unless feedback during the two-week window shows a reason. The one breaking change since v0.6 is in [MIGRATION.md](MIGRATION.md). Try it, and say what should change in the [RC feedback discussion](https://github.com/raven-clown/tack/discussions).
 
 ---
 
@@ -301,7 +301,7 @@ A `*tack.App` is an `http.Handler`. Use it with `http.Server`, mount it inside a
 
 ### Fast by design
 
-All reflection happens **once**, when routes are registered. At request time tack only runs a precomputed binding plan. See [BENCHMARKS.md](BENCHMARKS.md).
+All reflection happens **once**, when routes are registered. At request time tack only runs a precomputed binding plan. [BENCHMARKS.md](BENCHMARKS.md) has the numbers against plain `net/http`, Gin, Echo, and Huma on the same routes, measured by the harness in [bench/](bench/), including the cases where tack is slower.
 
 ### Mistakes caught at startup
 
@@ -343,7 +343,7 @@ If you know of a project that already covers all of this, please open an issue.
 
 ## Roadmap
 
-As of v0.5 the parts that set tack apart are all in place. The public launch is planned for v0.9, the release candidate, so the two-week feedback window doubles as the launch.
+As of v0.5 the parts that set tack apart are all in place. The public launch is v0.9, the release candidate: the two-week feedback window doubles as the launch, and v1.0 freezes the API when it closes.
 
 | Version | Focus | Status |
 | --- | --- | --- |
@@ -353,7 +353,7 @@ As of v0.5 the parts that set tack apart are all in place. The public launch is 
 | v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Done |
 | v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Done |
 | v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Done |
-| v0.9 | Release candidate: API review, fuzzing, benchmarks | Planned |
+| v0.9 | Release candidate: API review, future fit for the add-ons, benchmarks against other frameworks, security defaults | Done |
 | v1.0 | Stable API, docs site, real-world examples | Planned |
 
 After v1.0, add-ons ship as separate modules:
@@ -381,16 +381,17 @@ Every push and pull request runs:
 | Unit tests | Table-driven tests, `Example` tests for every public function, golden files for generated JSON Schema and OpenAPI, the README's Go blocks compiled against the checkout, and `goleak` on the stream, server, and `tack dev` tests; run with `-race` on the two most recent Go releases |
 | Fuzzing | Six fuzz targets for the query scanner, JSON and form binding, header lists, and path patterns, 20 seconds each |
 | Allocations | `TestAllocations` holds each request shape to its allocation budget (see BENCHMARKS.md) |
+| Framework parity | `bench/` serves the same API on net/http, Gin, Echo, Huma, and tack; its test checks that all five answer twelve requests the same way |
 | Coverage | Fails below 85% total coverage; the report is in the job summary |
 | Lint | golangci-lint with the config in `.golangci.yml` |
-| govulncheck | Known vulnerabilities reachable from tack's code |
+| govulncheck | Known vulnerabilities reachable from tack's code, `examples/auth`, and `bench` |
 | gosec | Static analysis for common Go security mistakes, in CI and in golangci-lint; the command is scanned separately without the rules a CLI cannot satisfy |
 | Trivy | Dependencies, leaked secrets, and misconfiguration across the repository |
 | CodeQL | Semantic code analysis |
 | Generated clients | openapi-generator validates the petstore spec and builds Go and TypeScript clients from it |
 | OpenSSF Scorecard | Weekly supply-chain posture score, published on the badge above |
 
-Dependabot keeps dependencies and actions current, and GitHub secret scanning with push protection is on. Findings land in the repository's Security tab. To report a vulnerability, follow [SECURITY.md](SECURITY.md).
+Dependabot keeps dependencies and actions current, and GitHub secret scanning with push protection is on. Findings land in the repository's Security tab. [SECURITY.md](SECURITY.md) lists the defaults an app starts with (body limits, timeouts, hidden internal errors, headers) and how to report a vulnerability.
 
 Run the same checks locally:
 
@@ -405,6 +406,10 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run && go r
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md): how tack works inside
+- [Design](DESIGN.md): the decisions behind the API, with the options that lost
+- [Migration](MIGRATION.md): every breaking change, before and after
+- [Benchmarks](BENCHMARKS.md): tack against net/http, Gin, Echo, and Huma
+- [Future fit](FUTURE_FIT.md): the planned add-ons written against today's API
 - [Examples](examples/): runnable example projects
 - [API reference](https://pkg.go.dev/github.com/raven-clown/tack)
 
