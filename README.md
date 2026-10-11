@@ -131,7 +131,25 @@ Declare a route with `{id}` in the path but no matching `path:"id"` field? tack 
 | TypeScript client | ❌ | ❌ | ✅ *(v0.4)* |
 | Standard `http.Handler` | ✅ | Varies | ✅ |
 
-tack is inspired by [FastAPI](https://fastapi.tiangolo.com/), and shares goals with excellent Go projects like [Huma](https://github.com/danielgtaylor/huma) and [Fuego](https://github.com/go-fuego/fuego). Check them out too.
+## Prior art and inspiration
+
+Every piece of tack exists somewhere already. What tack adds is putting them in one place: code-first on `net/http`, validation, OpenAPI, a TypeScript client with typed errors, Zod schemas from the same rules, and a dev loop, with no special toolchain. These projects showed the way.
+
+| Project | What tack takes from it |
+| --- | --- |
+| [FastAPI](https://fastapi.tiangolo.com/) (Python) | The core idea: declare a type once, get validation and docs for free |
+| [tRPC](https://trpc.io/) (TypeScript) | End-to-end types that reach the frontend, and typed errors |
+| [Huma](https://github.com/danielgtaylor/huma) | Code-first design in Go: struct tags for validation, OpenAPI 3.1, RFC 9457 errors |
+| [Fuego](https://github.com/go-fuego/fuego) | Building on Go 1.22's `net/http` routing instead of shipping a router |
+| [Encore](https://encore.dev/) | Proof that a built-in TypeScript client is what teams want; tack does it without tying you to a toolchain |
+| [Goa](https://goa.design/) and [Lawrence Jones's write-up](https://blog.lawrencejones.dev/goa/) | "Let the compiler catch it": both the Go and TypeScript compilers check that the two sides agree, which that article achieved by chaining several tools back in 2022 |
+| [turborpc](https://github.com/turborpc/turborpc) | A one-line API for getting a client, which became `app.WriteTypeScript()` |
+| [go2type](https://github.com/dx314/go2type) | Generating TanStack Query hooks (planned for v1.6) |
+| [zen](https://github.com/Hypersequent/zen) and [goldenthread](https://github.com/blackwell-systems/goldenthread) | Turning `validate` tags into Zod, and checking that both sides still agree, which is where `tack check` comes from |
+| [guts](https://github.com/coder/guts) | Go types to TypeScript; a candidate base for tack's generator |
+| [go-zero's goctl](https://github.com/zeromicro/go-zero) | Clients in several languages (planned for v1.7) |
+
+If you know of a project that already covers all of this, please open an issue.
 
 ## Roadmap
 
