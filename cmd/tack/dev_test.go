@@ -8,18 +8,32 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 // TestMain lets the test binary double as a tiny server for the dev tests:
 // with TACK_TEST_SERVE set it serves that file at /openapi.json on
 // TACK_TEST_ADDR until it is killed.
 func TestMain(m *testing.M) {
+	if os.Getenv("TACK_TEST_PARENT") != "" {
+		// Stand in for a launcher such as go run: the server is a grandchild.
+		child := exec.Command(os.Args[0])
+		child.Env = append(os.Environ(), "TACK_TEST_PARENT=")
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if spec := os.Getenv("TACK_TEST_SERVE"); spec != "" {
 		http.HandleFunc("/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 			b, err := os.ReadFile(spec)
@@ -36,7 +50,9 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"))
 }
 
 // syncBuffer collects output written from several goroutines.
@@ -125,6 +141,11 @@ func TestDevBuilds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var stdout, stderr syncBuffer
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+		}
+	})
 	done := make(chan int, 1)
 	go func() {
 		done <- run(ctx, []string{"dev", "-spec", "http://" + addr + "/openapi.json", "-o", out, "-zod", zod, "-dir", dir}, strings.NewReader(""), &stdout, &stderr)
@@ -346,4 +367,40 @@ func TestMock(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDevKillsTheProcessTree runs the app behind a launcher, as go run does,
+// and expects the server it started to be gone once dev stops.
+func TestDevKillsTheProcessTree(t *testing.T) {
+	dir := t.TempDir()
+	addr := freeAddr(t)
+	spec := filepath.Join(dir, "spec.json")
+	doc := `{"openapi":"3.1.0","info":{"title":"Tree","version":"1"},"paths":{"/":{"get":{"responses":{"204":{"description":"ok"}}}}}}`
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TACK_TEST_PARENT", "1")
+	t.Setenv("TACK_TEST_SERVE", spec)
+	t.Setenv("TACK_TEST_ADDR", addr)
+	out := filepath.Join(dir, "api.ts")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr syncBuffer
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"dev", "-spec", "http://" + addr + "/openapi.json", "-o", out, "-dir", dir, "--", os.Args[0]}, strings.NewReader(""), &stdout, &stderr)
+	}()
+	waitFor(t, "the client", time.Minute, func() bool { return fileContains(out, "from Tree 1") })
+	cancel()
+	if code := <-done; code != 0 {
+		t.Fatalf("dev exited with %d\n%s", code, stderr.String())
+	}
+	waitFor(t, "the server to be gone", 10*time.Second, func() bool {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			_ = c.Close()
+		}
+		return err != nil
+	})
 }
