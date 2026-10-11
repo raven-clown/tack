@@ -132,7 +132,7 @@ func TestRoutes(t *testing.T) {
 		{"tack error", "GET", "/pets/404", "", nil, 404, "application/problem+json",
 			`{"type":"about:blank","title":"Not Found","status":404,"detail":"pet not found"}`},
 		{"domain error", "GET", "/pets/410", "", nil, 404, "application/problem+json",
-			`{"type":"about:blank","title":"Not Found","status":404,"detail":"lookup: pet is gone"}`},
+			`{"type":"about:blank","title":"Not Found","status":404,"detail":"pet is gone"}`},
 		{"domain 5xx hides detail", "GET", "/pets/503", "", nil, 503, "application/problem+json",
 			`{"type":"about:blank","title":"Service Unavailable","status":503}`},
 		{"unknown error hides detail", "GET", "/pets/500", "", nil, 500, "application/problem+json",

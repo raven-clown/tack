@@ -38,7 +38,9 @@ func hasValidateTags(t reflect.Type, seen map[reflect.Type]bool) bool {
 	return false
 }
 
-func (a *App) validateInput(in any, locs map[string]string) []ErrorDetail {
+const maxErrors = 50
+
+func (a *App) validateInput(in any, prefix string, locs map[string]string) []ErrorDetail {
 	err := a.validate.Struct(in)
 	if err == nil {
 		return nil
@@ -47,17 +49,23 @@ func (a *App) validateInput(in any, locs map[string]string) []ErrorDetail {
 	if !errors.As(err, &verrs) {
 		return []ErrorDetail{{Location: "request", Message: err.Error()}}
 	}
-	details := make([]ErrorDetail, 0, len(verrs))
-	for _, fe := range verrs {
-		details = append(details, ErrorDetail{Location: location(fe, locs), Message: message(fe)})
+	details := make([]ErrorDetail, 0, min(len(verrs), maxErrors+1))
+	for i, fe := range verrs {
+		if i == maxErrors {
+			details = append(details, ErrorDetail{Location: "request", Message: fmt.Sprintf("and %d more errors", len(verrs)-maxErrors)})
+			break
+		}
+		details = append(details, ErrorDetail{Location: location(fe, prefix, locs), Message: message(fe)})
 	}
 	return details
 }
 
-// location maps a validator namespace such as "Input.Body[0].name" to "body[0].name".
-func location(fe validator.FieldError, locs map[string]string) string {
-	goSegs := strings.Split(fe.StructNamespace(), ".")[1:]
-	segs := strings.Split(fe.Namespace(), ".")[1:]
+// location maps a validator namespace such as "Input.Body[0].name" to
+// "body[0].name". prefix is the input type's name plus a dot, or empty for
+// anonymous structs.
+func location(fe validator.FieldError, prefix string, locs map[string]string) string {
+	goSegs := strings.Split(strings.TrimPrefix(fe.StructNamespace(), prefix), ".")
+	segs := strings.Split(strings.TrimPrefix(fe.Namespace(), prefix), ".")
 	for n := len(goSegs); n > 0; n-- {
 		last := goSegs[n-1]
 		name, suffix := last, ""
@@ -66,7 +74,7 @@ func location(fe validator.FieldError, locs map[string]string) string {
 		}
 		key := strings.Join(append(append([]string(nil), goSegs[:n-1]...), name), ".")
 		if loc, ok := locs[key]; ok {
-			rest := segs[n:]
+			rest := segs[min(n, len(segs)):]
 			if len(rest) == 0 {
 				return loc + suffix
 			}
@@ -74,6 +82,43 @@ func location(fe validator.FieldError, locs map[string]string) string {
 		}
 	}
 	return strings.Join(segs, ".")
+}
+
+// checkDive rejects slice, array, and map fields whose elements have validate
+// rules that validator would silently skip without dive.
+func checkDive(t reflect.Type, path string, seen map[reflect.Type]bool) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || seen[t] {
+		return nil
+	}
+	seen[t] = true
+	for i := range t.NumField() {
+		f := t.Field(i)
+		ft := f.Type
+		for ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		name := path + f.Name
+		switch ft.Kind() {
+		case reflect.Slice, reflect.Array, reflect.Map:
+			if ft.Elem().Kind() == reflect.Uint8 {
+				continue
+			}
+			if !strings.Contains(","+f.Tag.Get("validate")+",", ",dive,") && hasValidateTags(ft.Elem(), map[reflect.Type]bool{}) {
+				return fmt.Errorf("field %s: elements of %s have validate rules that are skipped without dive; add validate:\"dive\" to %s", name, ft, f.Name)
+			}
+			if err := checkDive(ft.Elem(), name+"[].", seen); err != nil {
+				return err
+			}
+		case reflect.Struct:
+			if err := checkDive(ft, name+".", seen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func message(fe validator.FieldError) string {
@@ -89,7 +134,12 @@ func message(fe validator.FieldError) string {
 		return size(fe.Kind(), "more than", p)
 	case "lt":
 		return size(fe.Kind(), "less than", p)
-	case "len", "eq":
+	case "eq":
+		if fe.Kind() == reflect.String {
+			return "must equal " + p
+		}
+		return size(fe.Kind(), "exactly", p)
+	case "len":
 		return size(fe.Kind(), "exactly", p)
 	case "email":
 		return "must be a valid email address"

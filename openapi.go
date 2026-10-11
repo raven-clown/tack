@@ -20,11 +20,13 @@ import (
 const (
 	defaultSpecPath = "/openapi.json"
 	defaultDocsPath = "/docs"
-	scalarURL       = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.69.2"
+	scalarURL       = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.69.2/dist/browser/standalone.js"
+	scalarSRI       = "sha384-WIChsUVC1uJ+G1lFA6lPYzOUgXAe8dVxUFIZ7lcENNtV34Esuo81NIxsj8EAQeHB"
 )
 
-// OpenAPI returns the app's OpenAPI document. Changes to it are served from
-// the spec path until another route is registered.
+// OpenAPI returns the app's OpenAPI document so it can be extended. Make
+// changes before the app serves requests; registering a route afterwards may
+// overwrite them.
 func (a *App) OpenAPI() *openapi.Document {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -57,7 +59,7 @@ func (a *App) initOpenAPI(c Config) {
 	docsPath := pathOr(c.DocsPath, defaultDocsPath)
 	if docsPath != "" && specPath != "" {
 		var buf bytes.Buffer
-		err := docsTemplate.Execute(&buf, struct{ Title, SpecURL, ScalarURL string }{title, relURL(docsPath, specPath), scalarURL})
+		err := docsTemplate.Execute(&buf, struct{ Title, SpecURL, ScalarURL, ScalarSRI string }{title, relURL(docsPath, specPath), scalarURL, scalarSRI})
 		if err != nil {
 			panic(fmt.Sprintf("tack: rendering docs page: %v", err))
 		}
@@ -98,7 +100,7 @@ var docsTemplate = template.Must(template.New("docs").Parse(`<!doctype html>
 </head>
 <body>
 <div id="app"></div>
-<script src="{{.ScalarURL}}"></script>
+<script src="{{.ScalarURL}}" integrity="{{.ScalarSRI}}" crossorigin="anonymous"></script>
 <script>
 Scalar.createApiReference("#app", {
   url: {{.SpecURL}},
@@ -162,7 +164,7 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out reflect.Ty
 			Name:        p.Name,
 			In:          p.In,
 			Description: desc,
-			Required:    p.In == "path" || (!hasDefault && schema.Required(p.Field.Tag.Get("validate"))),
+			Required:    p.In == "path" || (!hasDefault && a.zeroFails(p.Field)),
 			Schema:      s,
 		})
 	}
@@ -195,7 +197,7 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out reflect.Ty
 	}
 	op.Responses[strconv.Itoa(cfg.status)] = ok
 
-	errSchema, err := a.registry.Schema(reflect.TypeFor[Error]())
+	errSchema, err := a.registry.SchemaAs(reflect.TypeFor[Error](), "ProblemDetails")
 	if err != nil {
 		return err
 	}
@@ -204,7 +206,7 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out reflect.Ty
 		codes = append(codes, http.StatusBadRequest, http.StatusUnprocessableEntity)
 	}
 	if hasBody {
-		codes = append(codes, http.StatusRequestEntityTooLarge)
+		codes = append(codes, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
 	}
 	for _, c := range codes {
 		op.Responses[strconv.Itoa(c)] = &openapi.Response{
@@ -234,6 +236,16 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out reflect.Ty
 	a.opIDs[op.OperationID] = method + " " + route
 	a.spec = nil
 	return nil
+}
+
+// zeroFails reports whether omitting the value fails validation, which makes
+// the parameter required in practice.
+func (a *App) zeroFails(f reflect.StructField) bool {
+	rules := f.Tag.Get("validate")
+	if rules == "" {
+		return false
+	}
+	return a.validate.Var(reflect.Zero(f.Type).Interface(), rules) != nil
 }
 
 // specPath converts a ServeMux path to an OpenAPI path.

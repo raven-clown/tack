@@ -1,0 +1,93 @@
+{
+  "Ambiguous": {
+    "type": "object"
+  },
+  "PtrEmb": {
+    "type": "object",
+    "properties": {
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Unique ID",
+        "examples": [
+          42
+        ]
+      },
+      "x": {
+        "type": "integer",
+        "format": "int64"
+      }
+    },
+    "required": [
+      "x"
+    ]
+  },
+  "Rules": {
+    "type": "object",
+    "properties": {
+      "any": {},
+      "byUint": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "code": {
+        "type": "string",
+        "enum": [
+          "abc"
+        ]
+      },
+      "kind": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "a",
+          "b",
+          null
+        ]
+      },
+      "labels": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "minProperties": 1,
+        "maxProperties": 5
+      },
+      "quoted": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "code",
+      "labels",
+      "byUint",
+      "quoted",
+      "any"
+    ]
+  },
+  "Shadow": {
+    "type": "object",
+    "properties": {
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "createdAt"
+    ]
+  }
+}

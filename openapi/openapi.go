@@ -1,7 +1,10 @@
 // Package openapi defines the OpenAPI 3.1 document that tack generates.
 package openapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // Version is the OpenAPI version tack generates.
 const Version = "3.1.0"
@@ -107,6 +110,8 @@ type Schema struct {
 	MaxLength            *int               `json:"maxLength,omitempty"`
 	MinItems             *int               `json:"minItems,omitempty"`
 	MaxItems             *int               `json:"maxItems,omitempty"`
+	MinProperties        *int               `json:"minProperties,omitempty"`
+	MaxProperties        *int               `json:"maxProperties,omitempty"`
 	Pattern              string             `json:"pattern,omitempty"`
 }
 
@@ -123,6 +128,9 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 	}
 	c := *s
 	c.Nullable = false
+	if len(c.Enum) > 0 {
+		c.Enum = append(slices.Clone(c.Enum), nil)
+	}
 	if c.Ref != "" {
 		c.AnyOf = []*Schema{{Ref: c.Ref}, {Type: "null"}}
 		c.Ref = ""
@@ -135,4 +143,40 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		Type []string `json:"type"`
 		*plain
 	}{[]string{c.Type, "null"}, (*plain)(&c)})
+}
+
+// UnmarshalJSON reverses MarshalJSON, turning a "null" type or anyOf back
+// into Nullable.
+func (s *Schema) UnmarshalJSON(b []byte) error {
+	type plain Schema
+	var raw struct {
+		*plain
+		Type json.RawMessage `json:"type"`
+	}
+	raw.plain = (*plain)(s)
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if len(raw.Type) > 0 {
+		var many []string
+		if err := json.Unmarshal(raw.Type, &s.Type); err != nil {
+			if err := json.Unmarshal(raw.Type, &many); err != nil {
+				return err
+			}
+		}
+		for _, t := range many {
+			if t == "null" {
+				s.Nullable = true
+			} else {
+				s.Type = t
+			}
+		}
+	}
+	if len(s.AnyOf) == 2 && s.AnyOf[0].Ref != "" && s.AnyOf[1].Type == "null" {
+		s.Ref, s.AnyOf, s.Nullable = s.AnyOf[0].Ref, nil, true
+	}
+	if s.Nullable && len(s.Enum) > 0 && s.Enum[len(s.Enum)-1] == nil {
+		s.Enum = s.Enum[:len(s.Enum)-1]
+	}
+	return nil
 }

@@ -74,7 +74,7 @@ type Kitchen struct {
 	Age      uint8             `json:"age" validate:"gte=1,lt=30"`
 	Score    float64           `json:"score" validate:"gt=0,lte=1"`
 	Ratio    float32           `json:"ratio"`
-	Count    int32             `json:"count" default:"3"`
+	Count    int32             `json:"count"`
 	Big      int64             `json:"big"`
 	Unsigned uint              `json:"unsigned"`
 	Active   bool              `json:"active" example:"true"`
@@ -168,6 +168,9 @@ func TestErrors(t *testing.T) {
 		{reflect.TypeFor[map[string]func()](), "not supported"},
 		{reflect.TypeFor[nilProvider](), "JSONSchema returned nil"},
 		{reflect.TypeFor[struct{ Embedded }](), "not supported"},
+		{reflect.TypeFor[struct {
+			N int `json:"n" default:"3"`
+		}](), "default tags only apply to path, query, header, and cookie values"},
 	}
 	for _, tt := range tests {
 		r := NewRegistry()
@@ -191,8 +194,8 @@ func TestFieldErrorAndRequired(t *testing.T) {
 		t.Fatal("want error")
 	}
 	for rules, want := range map[string]bool{"required": true, "min=1,required": true, "dive,required": false, "": false} {
-		if got := Required(rules); got != want {
-			t.Errorf("Required(%q) = %v, want %v", rules, got, want)
+		if got := hasRule(rules, "required"); got != want {
+			t.Errorf("hasRule(%q) = %v, want %v", rules, got, want)
 		}
 	}
 }
@@ -210,5 +213,70 @@ func TestClean(t *testing.T) {
 	}
 	if pascal("") != "" {
 		t.Error(`pascal("") != ""`)
+	}
+}
+
+func TestSchemaAs(t *testing.T) {
+	r := NewRegistry()
+	s, err := r.SchemaAs(reflect.TypeFor[a.Pet](), "Animal")
+	if err != nil || s.Ref != "#/components/schemas/Animal" {
+		t.Fatalf("got %+v, %v", s, err)
+	}
+	if again, _ := r.Schema(reflect.TypeFor[a.Pet]()); again.Ref != s.Ref {
+		t.Fatalf("second lookup = %q", again.Ref)
+	}
+	if b, _ := r.SchemaAs(reflect.TypeFor[b.Pet](), "Animal"); b.Ref != "#/components/schemas/Pet" {
+		t.Fatalf("taken name should fall back, got %q", b.Ref)
+	}
+	if _, err := r.SchemaAs(reflect.TypeFor[Embedded](), "Bad"); err == nil || len(r.Schemas()) != 2 {
+		t.Fatalf("err = %v, schemas = %d", err, len(r.Schemas()))
+	}
+}
+
+type PtrEmb struct {
+	*Base
+	X int `json:"x"`
+}
+
+type Shadow struct {
+	ID string `json:"id"`
+	Base
+}
+
+type Ambiguous struct {
+	A
+	B
+}
+
+type A struct{ Name string }
+type B struct{ Name string }
+
+type Rules struct {
+	Code   string                 `json:"code" validate:"eq=abc"`
+	Labels map[string]int         `json:"labels" validate:"min=1,max=5"`
+	ByUint map[uint]bool          `json:"byUint"`
+	Quoted int64                  `json:"quoted,string"`
+	Kind   *string                `json:"kind" validate:"omitempty,oneof=a b"`
+	Any    openapi.SchemaProvider `json:"any"`
+}
+
+func TestFieldRules(t *testing.T) {
+	r := NewRegistry()
+	for _, typ := range []reflect.Type{reflect.TypeFor[PtrEmb](), reflect.TypeFor[Shadow](), reflect.TypeFor[Ambiguous](), reflect.TypeFor[Rules]()} {
+		if _, err := r.Schema(typ); err != nil {
+			t.Fatalf("%s: %v", typ, err)
+		}
+	}
+	golden(t, "rules", r.Schemas())
+
+	if got := r.Schemas()["PtrEmb"].Required; !reflect.DeepEqual(got, []string{"x"}) {
+		t.Errorf("PtrEmb required = %v, want [x]", got)
+	}
+	sh := r.Schemas()["Shadow"]
+	if sh.Properties["id"].Type != "string" || !reflect.DeepEqual(sh.Required, []string{"id", "createdAt"}) {
+		t.Errorf("Shadow = %+v required %v", sh.Properties["id"], sh.Required)
+	}
+	if len(r.Schemas()["Ambiguous"].Properties) != 0 {
+		t.Errorf("ambiguous fields should be dropped: %v", r.Schemas()["Ambiguous"].Properties)
 	}
 }

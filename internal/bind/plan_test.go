@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type Paging struct {
@@ -128,7 +129,7 @@ func TestBindErrors(t *testing.T) {
 		{"bad query", mustPlan[in](t), "/?n=x&id=1&id=y", "", 0, 400, []FieldError{{"query.n", "must be an integer"}, {"query.id[1]", "must be an integer"}}},
 		{"bad json", mustPlan[in](t), "/", `{"name":`, 0, 400, []FieldError{{"body", "is not valid JSON"}}},
 		{"wrong json type", mustPlan[in](t), "/", `{"age":"old"}`, 0, 400, []FieldError{{"body.age", "must be an integer"}}},
-		{"two values", mustPlan[in](t), "/", `{} {}`, 0, 400, []FieldError{{"body", "must contain a single JSON value"}}},
+		{"two values", mustPlan[in](t), "/", `{} {}`, 0, 400, []FieldError{{"body", "is not valid JSON"}}},
 		{"query and body errors", mustPlan[in](t), "/?n=x", `[1]`, 0, 400, []FieldError{{"query.n", "must be an integer"}, {"body", "must be an object"}}},
 		{"too large", mustPlan[in](t), "/", `{"name":"` + strings.Repeat("x", 100) + `"}`, 10, 413, nil},
 		{"too large after value", mustPlan[in](t), "/", `{}` + strings.Repeat(" ", 100) + "x", 10, 413, nil},
@@ -246,5 +247,73 @@ func TestPathParams(t *testing.T) {
 		if got := PathParams(tt.path); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("PathParams(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestBindBodyEdgeCases(t *testing.T) {
+	type when struct {
+		At time.Time `json:"at"`
+	}
+	type required struct {
+		N    int `path:"n"`
+		Body when
+	}
+	type optional struct{ Body *when }
+	tests := []struct {
+		name        string
+		plan        *Plan
+		dst         any
+		path, ctype string
+		body        string
+		wantStatus  int
+		wantFields  []FieldError
+	}{
+		{"null required", mustPlan[required](t, "n"), &required{}, "1", "", "null", 422, []FieldError{{"body", "is required"}}},
+		{"missing body and bad param", mustPlan[required](t, "n"), &required{}, "x", "", "", 400, []FieldError{{"path.n", "must be an integer"}, {"body", "is required"}}},
+		{"wrong content type", mustPlan[required](t, "n"), &required{}, "1", "text/plain", `{}`, 415, nil},
+		{"json suffix", mustPlan[required](t, "n"), &required{}, "1", "application/problem+json; charset=utf-8", `{"at":"2026-10-11T00:00:00Z"}`, 0, nil},
+		{"invalid custom value", mustPlan[required](t, "n"), &required{}, "1", "application/json", `{"at":"yesterday"}`, 400, []FieldError{{"body", "contains an invalid value"}}},
+		{"null optional", mustPlan[optional](t), &optional{}, "", "", " null ", 0, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body))
+			r.SetPathValue("n", tt.path)
+			if tt.ctype != "" {
+				r.Header.Set("Content-Type", tt.ctype)
+			}
+			err := tt.plan.Bind(r, tt.dst)
+			if tt.wantStatus == 0 {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			var be *Error
+			if !errors.As(err, &be) || be.Status != tt.wantStatus || !reflect.DeepEqual(be.Fields, tt.wantFields) {
+				t.Fatalf("err = %+v, want status %d fields %+v", be, tt.wantStatus, tt.wantFields)
+			}
+		})
+	}
+	var o optional
+	_ = mustPlan[optional](t).Bind(httptest.NewRequest(http.MethodPost, "/", strings.NewReader("null")), &o)
+	if o.Body != nil {
+		t.Fatal("null optional body should stay nil")
+	}
+}
+
+func TestBindHeaderList(t *testing.T) {
+	type in struct {
+		IDs []int `header:"X-Ids"`
+	}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Add("X-Ids", "1, 2")
+	r.Header.Add("X-Ids", "3")
+	var got in
+	if err := mustPlan[in](t).Bind(r, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.IDs, []int{1, 2, 3}) {
+		t.Fatalf("IDs = %v", got.IDs)
 	}
 }

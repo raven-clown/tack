@@ -53,7 +53,37 @@
         ],
         "type": "object"
       },
-      "Error": {
+      "ErrorDetail": {
+        "properties": {
+          "location": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Owner": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProblemDetails": {
         "properties": {
           "detail": {
             "type": "string"
@@ -82,36 +112,6 @@
           "type",
           "title",
           "status"
-        ],
-        "type": "object"
-      },
-      "ErrorDetail": {
-        "properties": {
-          "location": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "location",
-          "message"
-        ],
-        "type": "object"
-      },
-      "Owner": {
-        "properties": {
-          "email": {
-            "format": "email",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
         ],
         "type": "object"
       }
@@ -145,7 +145,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -197,7 +197,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -207,17 +207,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -227,7 +237,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -300,7 +310,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -310,7 +320,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -320,7 +330,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -360,7 +370,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -370,17 +380,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -390,7 +410,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -425,7 +445,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -435,7 +455,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -445,7 +465,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -483,7 +503,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -493,7 +513,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -503,7 +523,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -559,7 +579,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -569,17 +589,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },
@@ -589,7 +619,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             },

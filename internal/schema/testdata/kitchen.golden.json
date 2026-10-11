@@ -59,8 +59,7 @@
         },
         "count": {
           "type": "integer",
-          "format": "int32",
-          "default": 3
+          "format": "int32"
         },
         "createdAt": {
           "type": "string",

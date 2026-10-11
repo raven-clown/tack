@@ -49,7 +49,7 @@ func (r *Registry) Schema(t reflect.Type) (*openapi.Schema, error) {
 		return &c, nil
 	}
 
-	if implements(t, providerType) {
+	if t.Kind() != reflect.Interface && implements(t, providerType) {
 		return r.named(t, func() (*openapi.Schema, error) {
 			s := reflect.New(t).Interface().(openapi.SchemaProvider).JSONSchema()
 			if s == nil {
@@ -103,7 +103,7 @@ func (r *Registry) Schema(t reflect.Type) (*openapi.Schema, error) {
 		return s, nil
 	case reflect.Map:
 		k := t.Key()
-		if k.Kind() != reflect.String && !isInt(k.Kind()) && !k.Implements(textMarshaler) {
+		if k.Kind() != reflect.String && !isInt(k.Kind()) && !isUint(k.Kind()) && !k.Implements(textMarshaler) {
 			return nil, fmt.Errorf("map key type %s is not supported; use string or integer keys", k)
 		}
 		values, err := r.Schema(t.Elem())
@@ -118,6 +118,24 @@ func (r *Registry) Schema(t reflect.Type) (*openapi.Schema, error) {
 		return r.named(t, func() (*openapi.Schema, error) { return r.object(t) })
 	}
 	return nil, fmt.Errorf("type %s is not supported", t)
+}
+
+// SchemaAs is like Schema but registers struct type t under name.
+func (r *Registry) SchemaAs(t reflect.Type, name string) (*openapi.Schema, error) {
+	if _, ok := r.names[t]; !ok {
+		if _, taken := r.schemas[name]; !taken {
+			r.names[t] = name
+			r.schemas[name] = &openapi.Schema{}
+			s, err := r.object(t)
+			if err != nil {
+				delete(r.names, t)
+				delete(r.schemas, name)
+				return nil, err
+			}
+			r.schemas[name] = s
+		}
+	}
+	return r.Schema(t)
 }
 
 func (r *Registry) named(t reflect.Type, build func() (*openapi.Schema, error)) (*openapi.Schema, error) {
@@ -181,53 +199,6 @@ func pascal(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-func (r *Registry) object(t reflect.Type) (*openapi.Schema, error) {
-	s := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{}}
-	if err := r.fields(t, s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func (r *Registry) fields(t reflect.Type, s *openapi.Schema) error {
-	for i := range t.NumField() {
-		f := t.Field(i)
-		tag := f.Tag.Get("json")
-		if tag == "-" {
-			continue
-		}
-		name, opts, _ := strings.Cut(tag, ",")
-		if f.Anonymous && name == "" {
-			et := f.Type
-			if et.Kind() == reflect.Pointer {
-				et = et.Elem()
-			}
-			if et.Kind() == reflect.Struct {
-				if err := r.fields(et, s); err != nil {
-					return err
-				}
-				continue
-			}
-		}
-		if !f.IsExported() {
-			continue
-		}
-		if name == "" {
-			name = f.Name
-		}
-		fs, err := r.Field(f)
-		if err != nil {
-			return fmt.Errorf("field %s: %w", f.Name, err)
-		}
-		s.Properties[name] = fs
-		omit := strings.Contains(","+opts+",", ",omitempty,") || strings.Contains(","+opts+",", ",omitzero,")
-		if (!omit && f.Type.Kind() != reflect.Pointer) || hasRule(f.Tag.Get("validate"), "required") {
-			s.Required = append(s.Required, name)
-		}
-	}
-	return nil
-}
-
 // Field returns the schema for a struct field, applying doc, example, default,
 // and validate tags.
 func (r *Registry) Field(f reflect.StructField) (*openapi.Schema, error) {
@@ -280,8 +251,12 @@ func applyRule(s *openapi.Schema, t reflect.Type, name, param string) {
 	n, numErr := strconv.ParseFloat(param, 64)
 	size := numErr == nil
 	switch name {
-	case "min", "gte", "max", "lte", "gt", "lt", "len", "eq":
+	case "min", "gte", "max", "lte", "gt", "lt", "len":
 		if !size {
+			return
+		}
+	case "eq":
+		if !size && t.Kind() != reflect.String {
 			return
 		}
 	}
@@ -294,7 +269,14 @@ func applyRule(s *openapi.Schema, t reflect.Type, name, param string) {
 		setBound(s, t, n, true, true)
 	case "lt":
 		setBound(s, t, n, false, true)
-	case "len", "eq":
+	case "len":
+		setBound(s, t, n, true, false)
+		setBound(s, t, n, false, false)
+	case "eq":
+		if t.Kind() == reflect.String {
+			s.Enum = []any{param}
+			return
+		}
 		setBound(s, t, n, true, false)
 		setBound(s, t, n, false, false)
 	case "oneof":
@@ -334,9 +316,14 @@ func setBound(s *openapi.Schema, t reflect.Type, n float64, lower, exclusive boo
 				i--
 			}
 		}
-		if lower {
+		switch {
+		case t.Kind() == reflect.Map && lower:
+			s.MinProperties = &i
+		case t.Kind() == reflect.Map:
+			s.MaxProperties = &i
+		case lower:
 			s.MinItems = &i
-		} else {
+		default:
 			s.MaxItems = &i
 		}
 	default:
@@ -363,7 +350,7 @@ func literal(t reflect.Type, v string) any {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
 		}
-	case t.Kind() >= reflect.Uint && t.Kind() <= reflect.Uint64:
+	case isUint(t.Kind()):
 		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
 			return n
 		}
@@ -378,8 +365,6 @@ func literal(t reflect.Type, v string) any {
 	}
 	return v
 }
-
-func isInt(k reflect.Kind) bool { return k >= reflect.Int && k <= reflect.Int64 }
 
 // splitDive splits "min=1,dive,max=5" into the slice rules and the item rules.
 func splitDive(rules string) (head, tail string, dive bool) {
@@ -402,6 +387,3 @@ func hasRule(rules, name string) bool {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-// Required reports whether a validate tag contains a top-level required rule.
-func Required(rules string) bool { return hasRule(rules, "required") }

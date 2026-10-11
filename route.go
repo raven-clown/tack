@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/raven-clown/tack/internal/bind"
 )
@@ -97,18 +98,30 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		panic(fmt.Sprintf("tack: %s: Status(%d) must be a 2xx or 3xx code", route, cfg.status))
 	}
 
+	out := reflect.TypeFor[Out]()
+	if noBody(cfg.status) && out != reflect.TypeFor[struct{}]() {
+		panic(fmt.Sprintf("tack: %s: Status(%d) sends no body, but the handler returns %s; return struct{} instead", route, cfg.status, out))
+	}
+	if !strings.HasPrefix(path, "/") {
+		panic(fmt.Sprintf("tack: %s: path must start with \"/\"", route))
+	}
+
 	t := reflect.TypeFor[In]()
 	plan, err := bind.New(t, bind.PathParams(path))
 	if err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", route, err))
 	}
-	if err := a.addOperation(method, path, plan, reflect.TypeFor[Out](), cfg); err != nil {
+	if err := checkDive(t, "", map[reflect.Type]bool{}); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", route, err))
 	}
 	check := hasValidateTags(t, map[reflect.Type]bool{})
 	locs := plan.Locations()
+	prefix := ""
+	if t.Name() != "" {
+		prefix = t.Name() + "."
+	}
 
-	a.mux.HandleFunc(route, func(w http.ResponseWriter, req *http.Request) {
+	handler := func(w http.ResponseWriter, req *http.Request) {
 		var in In
 		if plan.HasBody() {
 			req.Body = http.MaxBytesReader(w, req.Body, a.maxBody)
@@ -118,18 +131,39 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 			return
 		}
 		if check {
-			if details := a.validateInput(in, locs); details != nil {
+			if details := a.validateInput(&in, prefix, locs); details != nil {
 				writeProblem(w, &Error{Status: http.StatusUnprocessableEntity, Detail: "validation failed", Errors: details})
 				return
 			}
 		}
-		out, err := h(req.Context(), in)
+		res, err := h(req.Context(), in)
 		if err != nil {
 			a.writeError(w, req, route, err)
 			return
 		}
-		a.writeJSON(w, req, route, cfg.status, out)
-	})
+		a.writeJSON(w, req, route, cfg.status, res)
+	}
+	if err := register(a.mux, route, handler); err != nil {
+		panic(fmt.Sprintf("tack: %s: %v; wildcards must be whole segments like {id}, and each method and path can be registered once", route, err))
+	}
+	if err := a.addOperation(method, path, plan, out, cfg); err != nil {
+		panic(fmt.Sprintf("tack: %s: %v", route, err))
+	}
+}
+
+// register turns ServeMux panics into errors.
+func register(mux *http.ServeMux, pattern string, h http.HandlerFunc) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	mux.HandleFunc(pattern, h)
+	return nil
+}
+
+func noBody(status int) bool {
+	return status == http.StatusNoContent || status == http.StatusResetContent || status == http.StatusNotModified
 }
 
 func writeBindError(w http.ResponseWriter, err error) {
@@ -146,7 +180,7 @@ func writeBindError(w http.ResponseWriter, err error) {
 }
 
 func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, route string, status int, v any) {
-	if status == http.StatusNoContent || status == http.StatusNotModified {
+	if noBody(status) {
 		w.WriteHeader(status)
 		return
 	}

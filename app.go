@@ -25,7 +25,8 @@ type Config struct {
 	Servers []openapi.Server
 
 	// SpecPath and DocsPath serve the OpenAPI document and the docs page.
-	// They default to "/openapi.json" and "/docs"; "-" disables them.
+	// They default to "/openapi.json" and "/docs"; "-" disables one. The docs
+	// page needs the spec, so disabling SpecPath disables both.
 	SpecPath string
 	DocsPath string
 

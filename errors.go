@@ -25,14 +25,16 @@ type ErrorDetail struct {
 	Message  string `json:"message"`
 }
 
-// NewError returns an *Error with the given HTTP status and detail.
+// NewError returns an *Error with the given HTTP status (400-599) and detail.
 //
 // Errors that are not an *Error can still choose their status by implementing
-// HTTPStatus() int. Any other error becomes a 500 with its details hidden.
+// HTTPStatus() int; only that error's own message reaches the client. Any
+// other error, or a status outside 400-599, becomes a 500 with details hidden.
 func NewError(status int, detail string) *Error {
 	return &Error{Status: status, Detail: detail}
 }
 
+// Error formats the status and detail, e.g. "404 Not Found: pet not found".
 func (e *Error) Error() string {
 	return fmt.Sprintf("%d %s: %s", e.Status, http.StatusText(e.Status), e.Detail)
 }
@@ -54,7 +56,11 @@ func (a *App) writeError(w http.ResponseWriter, r *http.Request, route string, e
 	if errors.As(err, &hs) && validStatus(hs.HTTPStatus()) {
 		s := hs.HTTPStatus()
 		if s < 500 {
-			writeProblem(w, &Error{Status: s, Detail: err.Error()})
+			detail := err.Error()
+			if e, ok := hs.(error); ok {
+				detail = e.Error()
+			}
+			writeProblem(w, &Error{Status: s, Detail: detail})
 			return
 		}
 		a.logError(r, route, err)

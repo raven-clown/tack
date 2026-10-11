@@ -2,10 +2,12 @@
 package bind
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/textproto"
 	"reflect"
@@ -51,6 +53,7 @@ type step struct {
 	field   reflect.StructField
 	name    string
 	display string
+	loc     string
 	index   []int
 	set     setter
 	slice   bool
@@ -166,7 +169,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			return fmt.Errorf("field %s: %w; use a string, bool, number, time.Time, or a type implementing encoding.TextUnmarshaler", goPath, err)
 		}
 
-		s := step{src: src, field: f, name: name, display: display, index: idx, set: set, slice: isSlice}
+		s := step{src: src, field: f, name: name, display: display, loc: sources[src].prefix + "." + display, index: idx, set: set, slice: isSlice}
 		if d, ok := f.Tag.Lookup("default"); ok {
 			if isSlice {
 				return fmt.Errorf("field %s: default is not supported on slices; remove the default tag", goPath)
@@ -255,17 +258,19 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 				continue
 			}
 			fv := v.FieldByIndex(s.index)
-			loc := sources[s.src].prefix + "." + s.display
 			if !s.slice {
 				if err := s.set(fv, values[0]); err != nil {
-					fields = append(fields, FieldError{loc, err.Error()})
+					fields = append(fields, FieldError{s.loc, err.Error()})
 				}
 				continue
+			}
+			if s.src == srcHeader {
+				values = splitList(values)
 			}
 			sv := reflect.MakeSlice(fv.Type(), len(values), len(values))
 			for j, raw := range values {
 				if err := s.set(sv.Index(j), raw); err != nil {
-					fields = append(fields, FieldError{fmt.Sprintf("%s[%d]", loc, j), err.Error()})
+					fields = append(fields, FieldError{fmt.Sprintf("%s[%d]", s.loc, j), err.Error()})
 				}
 			}
 			fv.Set(sv)
@@ -275,10 +280,20 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 	if p.body != nil {
 		if err := p.bindBody(r, v); err != nil {
 			var be *Error
-			if !errors.As(err, &be) || be.Status != http.StatusBadRequest {
+			if !errors.As(err, &be) {
 				return err
 			}
-			fields = append(fields, be.Fields...)
+			switch be.Status {
+			case http.StatusBadRequest:
+				fields = append(fields, be.Fields...)
+			case http.StatusUnprocessableEntity:
+				if len(fields) == 0 {
+					return err
+				}
+				fields = append(fields, be.Fields...)
+			default:
+				return err
+			}
 		}
 	}
 
@@ -317,33 +332,31 @@ func lookup(r *http.Request, query map[string][]string, s *step) []string {
 }
 
 func (p *Plan) bindBody(r *http.Request, v reflect.Value) error {
-	fv := v.FieldByIndex(p.body.index)
-	target := fv
-	if p.body.optional {
-		target = reflect.New(p.body.typ.Elem()).Elem()
+	if ct := r.Header.Get("Content-Type"); ct != "" && !isJSON(ct) {
+		return &Error{Status: http.StatusUnsupportedMediaType, Detail: fmt.Sprintf("content type %q is not supported; send application/json", ct)}
 	}
-
-	var dec *json.Decoder
-	err := io.EOF
+	var data []byte
 	if r.Body != nil && r.Body != http.NoBody {
-		dec = json.NewDecoder(r.Body)
-		err = dec.Decode(target.Addr().Interface())
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			return bodyError(err)
+		}
+		data = bytes.TrimSpace(b)
 	}
-	if errors.Is(err, io.EOF) {
+	if len(data) == 0 || string(data) == "null" {
 		if p.body.optional {
 			return nil
 		}
 		return &Error{Status: http.StatusUnprocessableEntity, Detail: "validation failed", Fields: []FieldError{{"body", "is required"}}}
 	}
-	if err != nil {
-		return bodyError(err)
+
+	fv := v.FieldByIndex(p.body.index)
+	target := fv
+	if p.body.optional {
+		target = reflect.New(p.body.typ.Elem()).Elem()
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
-			return bodyError(err)
-		}
-		return &Error{Status: http.StatusBadRequest, Fields: []FieldError{{"body", "must contain a single JSON value"}}}
+	if err := json.Unmarshal(data, target.Addr().Interface()); err != nil {
+		return bodyError(err)
 	}
 	if p.body.optional {
 		fv.Set(target.Addr())
@@ -351,10 +364,28 @@ func (p *Plan) bindBody(r *http.Request, v reflect.Value) error {
 	return nil
 }
 
+func isJSON(ct string) bool {
+	mt, _, err := mime.ParseMediaType(ct)
+	return err == nil && (mt == "application/json" || strings.HasSuffix(mt, "+json"))
+}
+
+func splitList(values []string) []string {
+	var out []string
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
+}
+
 func bodyError(err error) error {
 	var (
 		mbe *http.MaxBytesError
 		ute *json.UnmarshalTypeError
+		se  *json.SyntaxError
 	)
 	switch {
 	case errors.As(err, &mbe):
@@ -365,8 +396,10 @@ func bodyError(err error) error {
 			loc += "." + ute.Field
 		}
 		return &Error{Status: http.StatusBadRequest, Fields: []FieldError{{loc, "must be " + jsonKind(ute.Type)}}}
-	default:
+	case errors.As(err, &se):
 		return &Error{Status: http.StatusBadRequest, Fields: []FieldError{{"body", "is not valid JSON"}}}
+	default:
+		return &Error{Status: http.StatusBadRequest, Fields: []FieldError{{"body", "contains an invalid value"}}}
 	}
 }
 
