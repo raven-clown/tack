@@ -97,12 +97,15 @@ jobs:
         run: |
           go mod tidy
           go build ./...
-      - name: Check the committed tack client against the served document
-        run: go run ./cmd/tack check -spec petstore.json examples/petstore/client/api.ts
-      - name: Type-check the tack client
+      - name: Check the committed tack client and schemas against the served document
+        run: |
+          go run ./cmd/tack check -spec petstore.json examples/petstore/client/api.ts
+          go run ./cmd/tack check -spec petstore.json -zod examples/petstore/client/schemas.ts
+      - name: Type-check the tack client and schemas
         run: |
           npm install -g typescript@5.9.3
-          tsc --strict --noEmit --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom examples/petstore/client/api.ts
+          npm install --no-save --no-audit --no-fund zod@4
+          tsc --strict --noEmit --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --skipLibCheck examples/petstore/client/api.ts examples/petstore/client/schemas.ts
 
   vulncheck:
     name: Vulnerability check
