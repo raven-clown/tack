@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-11
+
 ### Changed
 
 - The request path allocates less: the query string is scanned for the bound fields instead of parsed into a map, route inputs are pooled, and responses are encoded by a pooled encoder. A route with a path value, a query value, a default, and validation went from 10 allocations and 504 bytes per request to 4 and 48, about a third faster; see BENCHMARKS.md. Behavior is unchanged, and malformed query pairs are skipped the way `url.ParseQuery` skips them.
@@ -131,7 +133,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/raven-clown/tack/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/raven-clown/tack/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/raven-clown/tack/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/raven-clown/tack/compare/v0.3.0...v0.4.0
