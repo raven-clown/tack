@@ -1,0 +1,36 @@
+## 1. rename the field in the Go structs (source of truth)
+$ grep -c PetName tack/main.go
+2
+(exit 0)
+## 2. go build
+$ go build ./...
+# tackpets
+.\main.go:91:23: unknown field Name in struct literal of type Pet
+.\main.go:91:37: in.Body.Name undefined (type PetInput has no field or method Name)
+.\main.go:102:22: unknown field Name in struct literal of type Pet
+.\main.go:102:36: in.Body.Name undefined (type PetInput has no field or method Name)
+(exit 1)
+## 3. fix what the compiler names
+$ go build -o ../bin/tack-rename.exe .
+(exit 0)
+## 4. docs after build passes (no extra command): fetch /openapi.json from the running server
+$ grep -c "petName" results/rename/tack-openapi.json
+1
+(exit 0)
+$ grep -c "name" results/rename/tack-openapi.json
+1
+(exit 0)
+## 5. tsc without regenerating TypeScript: passes, types are stale
+$ npx tsc -p .
+(exit 0)
+## 6. regenerate TypeScript from the fetched spec, then tsc
+$ npx openapi-typescript results/rename/tack-openapi.json -o tack/ts/api.d.ts
+✨ openapi-typescript 7.13.0
+🚀 results/rename/tack-openapi.json → tack/ts/api.d.ts [23.4ms]
+(exit 0)
+$ npx tsc -p .
+consumer.ts(6,12): error TS2339: Property 'name' does not exist on type '{ id: number; kind: "cat" | "dog" | "bird"; petName: string; }'.
+(exit 2)
+## 7. fix the consumer
+$ npx tsc -p .
+(exit 0)

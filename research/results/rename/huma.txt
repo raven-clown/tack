@@ -1,0 +1,36 @@
+## 1. rename the field in the Go structs (source of truth)
+$ grep -c PetName huma/main.go
+2
+(exit 0)
+## 2. go build
+$ go build ./...
+# humapets
+.\main.go:101:23: unknown field Name in struct literal of type Pet
+.\main.go:101:37: in.Body.Name undefined (type PetInput has no field or method Name)
+.\main.go:112:22: unknown field Name in struct literal of type Pet
+.\main.go:112:36: in.Body.Name undefined (type PetInput has no field or method Name)
+(exit 1)
+## 3. fix what the compiler names
+$ go build -o ../bin/huma-rename.exe .
+(exit 0)
+## 4. docs after build passes (no extra command): fetch /openapi.json from the running server
+$ grep -c "petName" results/rename/huma-openapi.json
+1
+(exit 0)
+$ grep -c "name" results/rename/huma-openapi.json
+1
+(exit 0)
+## 5. tsc without regenerating TypeScript: passes, types are stale
+$ npx tsc -p .
+(exit 0)
+## 6. regenerate TypeScript from the fetched spec, then tsc
+$ npx openapi-typescript results/rename/huma-openapi.json -o huma/ts/api.d.ts
+✨ openapi-typescript 7.13.0
+🚀 results/rename/huma-openapi.json → huma/ts/api.d.ts [26.8ms]
+(exit 0)
+$ npx tsc -p .
+consumer.ts(6,12): error TS2339: Property 'name' does not exist on type '{ readonly $schema?: string | undefined; id: number; kind: "cat" | "dog" | "bird"; petName: string; }'.
+(exit 2)
+## 7. fix the consumer
+$ npx tsc -p .
+(exit 0)

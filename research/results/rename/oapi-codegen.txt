@@ -1,0 +1,37 @@
+## 1. rename the property in openapi.yaml (source of truth): 2 schemas x (property + required)
+$ grep -n petName oapi-codegen/openapi.yaml
+104:      required: [id, petName, kind]
+108:        petName:
+115:      required: [petName, kind]
+117:        petName:
+(exit 0)
+## 2. go build without regenerating: nothing changes, build passes, server now disagrees with the spec
+$ go build ./...
+(exit 0)
+## 3. regenerate the Go server
+$ go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config cfg.yaml openapi.yaml
+(exit 0)
+$ go build ./...
+# oapicodegen
+.\main.go:75:27: unknown field Name in struct literal of type api.Pet
+.\main.go:75:36: in.Name undefined (type api.PetInput has no field or method Name)
+.\main.go:92:23: unknown field Name in struct literal of type api.Pet
+.\main.go:92:32: in.Name undefined (type api.PetInput has no field or method Name)
+(exit 1)
+## 4. fix what the compiler names
+$ go build ./...
+(exit 0)
+## 5. tsc without regenerating TypeScript: passes, types are stale
+$ npx tsc -p .
+(exit 0)
+## 6. regenerate TypeScript, then tsc
+$ npx openapi-typescript oapi-codegen/openapi.yaml -o oapi-codegen/ts/api.d.ts
+✨ openapi-typescript 7.13.0
+🚀 oapi-codegen/openapi.yaml → oapi-codegen/ts/api.d.ts [22.8ms]
+(exit 0)
+$ npx tsc -p .
+consumer.ts(6,12): error TS2339: Property 'name' does not exist on type '{ id: number; petName: string; kind: "cat" | "dog" | "bird"; }'.
+(exit 2)
+## 7. fix the consumer
+$ npx tsc -p .
+(exit 0)
