@@ -1,0 +1,34 @@
+name: 📚 Documentation
+description: Something in the docs or examples is wrong, missing, or confusing
+title: "docs: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where?
+      description: Link to the page, file, or example.
+      placeholder: README.md → "Validation errors that make sense"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem?
+      options:
+        - Incorrect (doesn't match how tack behaves)
+        - Missing (something isn't documented)
+        - Confusing (hard to understand)
+        - Example doesn't run
+        - Typo / formatting
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's wrong, and what would make it better?
+    validations:
+      required: true

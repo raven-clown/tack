@@ -1,0 +1,26 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/tack
+/dist/
+
+# Test output
+*.test
+*.out
+coverage.*
+*.prof
+
+# Throwaway prototypes
+/scratch/
+
+# Local tooling
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

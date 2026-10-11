@@ -1,0 +1,126 @@
+name: 🐛 Bug report
+description: Something in tack doesn't work as expected
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! 🙏
+        **Security issue?** Do not file it here — follow [SECURITY.md](https://github.com/raven-clown/tack/blob/main/SECURITY.md) instead.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+        - label: I'm using the latest version of tack.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: When I send a query like ?tag=a&tag=b, only the last value is bound...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest `main.go` (or test) that shows the problem. This is the most helpful thing you can give us.
+      render: go
+      placeholder: |
+        package main
+
+        import (
+            "context"
+            "net/http"
+
+            "github.com/raven-clown/tack"
+        )
+
+        type Input struct {
+            Tags []string `query:"tag"`
+        }
+
+        func main() {
+            app := tack.New(tack.Config{Title: "repro", Version: "0.0.1"})
+            tack.Get(app, "/items", func(ctx context.Context, in Input) ([]string, error) {
+                return in.Tags, nil
+            })
+            http.ListenAndServe(":8080", app)
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Request you sent
+      description: The exact request, e.g. a curl command.
+      render: shell
+      placeholder: curl "http://localhost:8080/items?tag=a&tag=b"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Response should be ["a", "b"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the full response body, error, or panic message and stack trace.
+      render: text
+      placeholder: Response is ["b"]
+    validations:
+      required: true
+
+  - type: input
+    id: tack-version
+    attributes:
+      label: tack version
+      placeholder: v0.2.1
+    validations:
+      required: true
+
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version
+      description: Output of `go version`
+      placeholder: go version go1.xx.x linux/amd64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Routing
+        - Binding (path / query / header / cookie / body)
+        - Validation
+        - Errors
+        - OpenAPI / docs
+        - Middleware / auth
+        - TypeScript client
+        - File upload / streaming / SSE
+        - CLI
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Workarounds you found, related issues, or ideas about the cause.
