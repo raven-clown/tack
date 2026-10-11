@@ -57,8 +57,9 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 /internal/bind      Builds and executes bind plans (request → struct)
 /internal/schema    Converts Go types to JSON Schema 2020-12 + schema registry
 /openapi            OpenAPI 3.1 document types
-/tsgen              Generates the TypeScript client from the OpenAPI document
-/cmd/tack           CLI: gen ts, check (dev, mock, new, spec, diff, build planned)
+/tsgen              Generates the TypeScript client and Zod schemas from the OpenAPI document
+/internal/mock      Serves example responses for a document (tack mock)
+/cmd/tack           CLI: gen ts, gen zod, check, dev, mock (new, spec, diff, build planned)
 /tacktest           Typed test client (v1.3)
 /examples           Runnable example projects (each its own module if it has extra deps)
 /bench              Benchmarks against other frameworks (separate module)
@@ -151,6 +152,18 @@ Each method passes a small literal to the shared `send`: method, path template, 
 
 Schema mapping: `$ref` to the component's name, `allOf` to an intersection (which is how `PetNotFoundProblem` becomes `ProblemDetails & { code: "pet_not_found" }`, the discriminant of the union), `oneOf`/`anyOf` to unions, enums to literal unions, nullable to `| null`, maps to `Record<string, T>`, and schemas with no type to `unknown`. Numbers are `number` regardless of format, and dates are `string`.
 
+### Zod generation (`tsgen.GenerateZod`)
+
+The same `collect` pass plans the names, then a second emitter writes a separate file that imports `zod`, so the client stays dependency-free. Component schemas are written in dependency order (a depth-first walk of their `$ref`s); a schema that can reach itself is written as `const X: z.ZodType<X> = z.lazy(() => ...)` with the type spelled out the way the client spells it, since `z.infer` cannot name a lazy schema. Keywords map to Zod calls: `minimum`/`maximum`/exclusive bounds to `.min`/`.max`/`.gt`/`.lt`, lengths and item counts to `.min`/`.max`, `pattern` to `.regex(new RegExp(...))`, `format` to `.email()`, `.uuid()`, `.url()`, `.datetime()`, `enum` to `z.enum` or a union of literals, `allOf` to `.and`, `oneOf`/`anyOf` to `z.union`, nullable to `.nullable()`, a missing `required` entry to `.optional()`, and `default` to `.default(v)`. Every operation with parameters or a body also gets an `XInput` object schema. Only the calls shared by Zod 3.23 and Zod 4 are used; the end-to-end test runs the output with Zod 4.
+
+### Mock server (`internal/mock`)
+
+`mock.Handler(doc)` registers one `ServeMux` route per operation and prepares every documented response once: the body is built from the response schema by `example`, which prefers `examples`, then `default`, then the first `enum` value, and otherwise derives a value from the type, format, bounds, and property name, merging `allOf` and taking the first `oneOf`/`anyOf` alternative; recursion through `$ref` stops after four levels. A problem body gets the real status, title, and the detail the error was defined with. The success status is served by default; a `Prefer: code=NNN` header selects another documented status, and an undocumented one is a 400 with code `undocumented_status`. OpenAPI paths are exact, so a path ending in `/` is registered with `{$}`. The handler adds cross-origin headers to every response, answers preflight requests, and serves the document at `/openapi.json`. Requests are not validated.
+
+### Dev loop (`tack dev`)
+
+`devLoop` has no dependency on a file watcher: every 500 ms it rescans the directory for `.go`, `go.mod`, and `go.sum` files (skipping hidden directories, `node_modules`, `vendor`, and `testdata`) and compares sizes and modification times. On a change it runs `go build -o <tmp>/app .`, and only on success kills the running app and starts the new binary, so a typo never takes the app down. It then polls the document URL until the app answers, generates the client (and schemas with `-zod`), and writes each file only when its content changed, so editors and type checkers are not woken for nothing. With a command after `--` the build step is skipped and the command is restarted instead. The dev tests build and edit a small stdlib-only program, and use the test binary itself as the `--` command.
+
 ## Dependencies
 
 - **Core:** `github.com/go-playground/validator/v10` only. Adding any other core dependency requires maintainer approval.
@@ -161,7 +174,7 @@ Schema mapping: `$ref` to the component's name, `allOf` to an intersection (whic
 
 - Table-driven unit tests for every converter, tag, and error path.
 - **Golden files** in `testdata/` for generated JSON Schema, OpenAPI, and TypeScript. Update with `go test ./... -update`.
-- The generated client is **run end to end**: a test compiles it with `tsc --strict` and runs it with node against an `httptest` server, covering parameters, bodies, typed errors, headers, 204, credentials, and an undocumented response. It is skipped when `tsc` or `node` is not on PATH; CI installs both.
+- The generated client is **run end to end**: a test compiles it with `tsc --strict` and runs it with node against an `httptest` server, covering parameters, bodies, typed errors, headers, 204, credentials, and an undocumented response; the Zod schemas are run the same way after `npm install zod`. It is skipped when `tsc` or `node` is not on PATH; CI installs both.
 - Generated specs are validated against the OpenAPI 3.1 spec in tests.
 - Fuzz tests for binding and parsing (v0.9+).
 - `go test -race` always runs in CI.

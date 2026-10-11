@@ -65,6 +65,8 @@ That's it. You now have:
 - **Interactive docs** at `/docs`, including the auth schemes you declare
 - **Typed errors** declared per route and listed in the docs by code
 - **TypeScript client** generated from the same types, where the errors a route declares form a typed union
+- **Zod schemas** with the same validation rules, for forms that check before they send
+- **`tack dev`** to rebuild the app and the client on every save, and **`tack mock`** to serve example responses before the API exists
 
 ## Installation
 
@@ -168,6 +170,38 @@ tack check  -spec openapi.json client/api.ts   # exit 1 when stale
 
 Responses the document does not describe, such as a proxy's 502, are thrown as `ApiError`; `unwrap(res)` throws the same class for code that prefers exceptions. See [examples/petstore/client/api.ts](examples/petstore/client/api.ts) for a generated file.
 
+### Zod schemas from the same rules
+
+`tack gen zod` (or `tsgen.GenerateZod`) writes one [Zod](https://zod.dev) schema per type and per route input, carrying the `validate` rules the server enforces, so a form can reject bad input before the request and show the same errors the API would:
+
+```ts
+import { PostPetsInput } from "./schemas";
+
+const result = PostPetsInput.safeParse({ body: form });   // name: max 50, kind: cat | dog | bird
+```
+
+The file imports `zod` and works with Zod 3.23 and later, Zod 4 included. `tsgen.CheckZod` and `tack check -zod` keep it fresh the same way as the client. See [examples/petstore/client/schemas.ts](examples/petstore/client/schemas.ts).
+
+### Save a Go file, get a fresh client
+
+`tack dev` builds the app, runs it, and regenerates the client from the running app's document. Save any Go file and it does it all again; a build error keeps the current app running and waits for the next save:
+
+```bash
+tack dev -o client/api.ts -zod client/schemas.ts     # builds and runs the current directory
+tack dev -spec http://localhost:3000/openapi.json -- go run ./cmd/server
+```
+
+The stale window between a Go change and a correct client is the length of one build, and the frontend's type checker sees the change in the editor.
+
+### A mock before the API exists
+
+`tack mock` serves every operation in a document with example responses built from the schemas, including the declared errors on request, so a frontend can be built against the contract first:
+
+```bash
+tack mock -spec openapi.json                      # http://127.0.0.1:8081
+curl -H "Prefer: code=404" localhost:8081/pets/7  # {"code":"pet_not_found", ...}
+```
+
 ### Groups and middleware
 
 Groups share a path prefix, middleware, and options. Middleware is plain `func(http.Handler) http.Handler` at the app, group, and route level, so anything written for `net/http` or chi works as is:
@@ -250,7 +284,7 @@ If you know of a project that already covers all of this, please open an issue.
 
 ## Roadmap
 
-The public launch is planned for v0.5, once the parts that set tack apart are all in place.
+As of v0.5 the parts that set tack apart are all in place; the public launch follows.
 
 | Version | Focus | Status |
 | --- | --- | --- |
@@ -258,7 +292,7 @@ The public launch is planned for v0.5, once the parts that set tack apart are al
 | v0.2 | OpenAPI 3.1 + `/docs` | Done |
 | v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Done |
 | v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Done |
-| v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Planned |
+| v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Done |
 | v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Planned |
 | v0.9 | Release candidate: API review, fuzzing, benchmarks | Planned |
 | v1.0 | Stable API, docs site, real-world examples | Planned |

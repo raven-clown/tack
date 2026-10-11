@@ -14,6 +14,7 @@ This file records the design decisions behind tack's public API: the options con
 | D6 | Groups and middleware | `App.Group(prefix, mw...)` and `Group.With(opts...)`; plain `func(http.Handler) http.Handler` at app, group, and route level | Decided |
 | D7 | Typed errors | `DefineError(status, code, detail)` returns an `*Error` with a `code`; `Errors(...)` documents them per route, one schema per code | Decided |
 | D8 | TypeScript client | One fetch-based file generated from the OpenAPI document; methods return a `Result` whose error is the union of the declared problems; undocumented responses throw; `tsgen.Check` in a test keeps the file fresh | Decided |
+| D9 | Zod schemas and the dev loop | Zod in a separate file generated from the document; `tack dev` polls files, builds before it restarts, and writes only what changed; `tack mock` answers from schemas and takes `Prefer: code=` for errors | Decided |
 
 ## Prior art
 
@@ -293,6 +294,32 @@ Sub-decisions under A:
 - **The output is deterministic**: schemas, operations, and properties are sorted, so the file changes only when the API does, diffs are small, and `tsgen.Check` is a byte comparison with CRLF normalized.
 - **Freshness is a test first and a command second.** `tsgen.Check(app.OpenAPI(), "client/api.ts")` in a Go test needs no running server and no exported file, and runs wherever the code's tests run; `tack check` covers CI setups that already export the document.
 
+## D9. Zod schemas and the dev loop
+
+**A. Zod in its own file, generated from the document (chosen)**
+
+```ts
+import { PostPetsInput } from "./schemas";
+const result = PostPetsInput.safeParse({ body: form });
+```
+
+- Yes: the client stays dependency-free (D8) and projects that do not use Zod never see it.
+- Yes: the `validate` rules already live in the document as JSON Schema keywords, so Zod is one more projection of the same contract, not a second reading of struct tags. Anything the schema registry cannot express (custom validators) is simply not in the Zod file, which is honest.
+- Yes: the same name planning as the client, so `PostPetsInput` is the same shape in both files.
+- No: a schema in a reference cycle cannot use `z.infer`, so its type is written out and the schema is `z.lazy`. Accepted; it only affects recursive types.
+
+**B. Zod inside the client file**
+
+- No: every consumer of the client would install Zod.
+
+**C. Generate Zod from Go struct tags directly (zen style)**
+
+- No: a second reader of the tags can disagree with the schema registry, which is exactly the drift tack exists to remove.
+
+**The dev loop polls files and builds before it restarts.** A file watcher would be the first dependency outside the standard library, and a 500 ms poll of a project's Go files costs nothing noticeable. `go build` runs first and the old app keeps serving until the new binary exists, so a typo never leaves the frontend without an API. Files are written only when their content changed, so editors and type checkers are not woken for an identical client.
+
+**The mock answers from schemas and takes `Prefer: code=NNN` for errors.** The success response is the default; a frontend asks for a declared error by status, which is the header Prism uses, so nothing new to learn. `examples` and `default` win over derived values, so an API that documents examples gets a realistic mock for free. The mock does not validate requests: that is the real server's job, and a mock that rejects what the server would accept is worse than one that accepts everything.
+
 ## Decisions
 
 Decided on 2026-10-11. The options marked "chosen" above were accepted as written; the remaining questions were settled as follows.
@@ -327,6 +354,10 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Credentials (v0.4) | `ClientOptions.credentials` keyed by scheme name, a string or an async function; the first security alternative with every credential set is sent | Mirrors the document's alternatives; a function covers tokens that refresh |
 | Numbers in the client (v0.4) | Every integer and number is `number`, whatever its format | `int64` beyond 2^53 loses precision in JavaScript either way; a `string` field is the fix on the Go side |
 | Empty success body (v0.4) | `data` is `undefined` for 204 and for a `Content-Length: 0` response; otherwise the body must be JSON | Matches what tack sends; a 200 with an empty body is a server bug, and `response.json()` reports it |
+| Zod version (v0.5) | Only calls shared by Zod 3.23 and Zod 4 (`.email()`, `.datetime()`, `z.record(key, value)`, `.and`) | One output for both major versions; the end-to-end test runs it with Zod 4 |
+| Defaults in Zod (v0.5) | A documented `default` becomes `.default(v)` rather than `.optional()` | The parsed value then matches what the server would have bound |
+| Mock `oneOf` (v0.5) | The first alternative, in document order | One deterministic answer; the other codes are reachable by status with `Prefer` only when they have their own status |
+| Dev loop restart (v0.5) | Kill and restart the binary; no graceful shutdown | It is a development server; in-flight requests on save are not worth waiting for |
 
 ## Prototype
 
