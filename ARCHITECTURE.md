@@ -57,8 +57,8 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 /internal/bind      Builds and executes bind plans (request → struct)
 /internal/schema    Converts Go types to JSON Schema 2020-12 + schema registry
 /openapi            OpenAPI 3.1 document types
-/tsgen              Generates TypeScript from the OpenAPI document (v0.4)
-/cmd/tack           CLI: gen, check, dev, mock, new, spec, diff, build (v0.4+)
+/tsgen              Generates the TypeScript client from the OpenAPI document
+/cmd/tack           CLI: gen ts, check (dev, mock, new, spec, diff, build planned)
 /tacktest           Typed test client (v1.3)
 /examples           Runnable example projects (each its own module if it has extra deps)
 /bench              Benchmarks against other frameworks (separate module)
@@ -141,9 +141,15 @@ Converts `reflect.Type` to JSON Schema 2020-12. Named types are stored once in a
 
 The `openapi` package only defines the document types. Each route adds its operation to the app's document at registration, converting its types through the schema registry, so unsupported types panic at startup rather than on the first spec request. The spec is encoded to JSON once and cached; registering another route or calling `app.OpenAPI()` clears the cache. `/docs` serves a small HTML page that loads a pinned Scalar version from a CDN, with its hosted extras (assistant, MCP, developer tools, external client, telemetry) turned off.
 
-### TypeScript generation (`tsgen`, v0.4)
+### TypeScript generation (`tsgen`)
 
-Generates TypeScript **from the OpenAPI document**, not by reflecting on Go types again. This guarantees the client, the spec, and `/docs` always agree. Output is a single dependency-free file using `fetch`, and must be deterministic (byte-identical across runs).
+Generates TypeScript **from the OpenAPI document**, not by reflecting on Go types again. This guarantees the client, the spec, and `/docs` always agree, and it is why `tack gen ts` reading the JSON produces the same bytes as `tsgen.Generate` in process (there is a test). Output is a single dependency-free file using `fetch`, and it is deterministic: schemas, operations, and properties are sorted, so the file changes only when the API does and `tsgen.Check` can compare bytes (after normalizing CRLF).
+
+Generation has two passes. `collect` validates the document and plans every TypeScript name first, so a problem (duplicate operation IDs, an ID that is not an identifier, a schema that needs a name the runtime or another operation uses, two parameters with one name, a non-JSON body, several success responses) is reported once with a fix instead of as broken output. `emit` then writes, in order: the `Client` class with one method per operation, the shared runtime (`ClientOptions`, `Result`, `ApiError`, `unwrap`, the request sender, and the credential logic), one `Input`, `Error`, and `Headers` type per operation, and one type per component schema.
+
+Each method passes a small literal to the shared `send`: method, path template, the names of the query and header parameters, whether there is a body, the success status and whether it carries JSON, the documented error statuses, the response headers with how to parse each (`number`, `boolean`, comma-separated `array` or `numbers`), and the security alternatives. At runtime `send` builds the URL (path parameters URL-encoded, arrays as repeated query keys), applies the first security alternative for which every credential is set, sends JSON, and classifies the response: the documented success status is `{ ok: true }` with the parsed body and headers; a documented error status with a JSON body is `{ ok: false }` typed as the union of that operation's problem schemas; anything else is thrown as `ApiError` so the union never lies. Cookie parameters are left out of the input, because browsers send them.
+
+Schema mapping: `$ref` to the component's name, `allOf` to an intersection (which is how `PetNotFoundProblem` becomes `ProblemDetails & { code: "pet_not_found" }`, the discriminant of the union), `oneOf`/`anyOf` to unions, enums to literal unions, nullable to `| null`, maps to `Record<string, T>`, and schemas with no type to `unknown`. Numbers are `number` regardless of format, and dates are `string`.
 
 ## Dependencies
 
@@ -155,6 +161,7 @@ Generates TypeScript **from the OpenAPI document**, not by reflecting on Go type
 
 - Table-driven unit tests for every converter, tag, and error path.
 - **Golden files** in `testdata/` for generated JSON Schema, OpenAPI, and TypeScript. Update with `go test ./... -update`.
+- The generated client is **run end to end**: a test compiles it with `tsc --strict` and runs it with node against an `httptest` server, covering parameters, bodies, typed errors, headers, 204, credentials, and an undocumented response. It is skipped when `tsc` or `node` is not on PATH; CI installs both.
 - Generated specs are validated against the OpenAPI 3.1 spec in tests.
 - Fuzz tests for binding and parsing (v0.9+).
 - `go test -race` always runs in CI.
