@@ -145,7 +145,7 @@ func TestBadInput(t *testing.T) {
 	}{
 		{"no args", nil, 2, "Usage:", "stderr"},
 		{"help", []string{"help"}, 0, "Usage:", "stdout"},
-		{"flag help", []string{"gen", "ts", "-h"}, 0, "", "stdout"},
+		{"flag help", []string{"gen", "ts", "-h"}, 0, "Usage:", "stdout"},
 		{"unknown command", []string{"build"}, 1, `unknown command "build"`, "stderr"},
 		{"gen without target", []string{"gen"}, 2, "gen needs a target", "stderr"},
 		{"gen unknown target", []string{"gen", "go"}, 2, `unknown target "go"`, "stderr"},

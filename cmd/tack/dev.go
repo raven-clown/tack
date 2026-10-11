@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,6 +70,7 @@ func (d *devLoop) run(ctx context.Context) error {
 		}
 	}
 	defer d.stop()
+	defer http.DefaultClient.CloseIdleConnections()
 
 	snapshot, err := scan(d.dir)
 	if err != nil {
@@ -127,6 +129,11 @@ func (d *devLoop) restart(ctx context.Context) {
 	}
 	cmd.Dir = d.dir
 	cmd.Stdout, cmd.Stderr = d.stdout, d.stderr
+	// The command may be a launcher such as go run, so the whole tree is
+	// killed, not only the direct child.
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killTree(cmd.Process) }
+	cmd.WaitDelay = time.Second // do not hang on pipes a grandchild still holds
 	if err := cmd.Start(); err != nil {
 		d.logf("cannot start the app: %v", err)
 		return
@@ -148,7 +155,7 @@ func (d *devLoop) stop() {
 	if d.proc == nil {
 		return
 	}
-	_ = d.proc.Process.Kill()
+	_ = killTree(d.proc.Process)
 	if d.exited != nil {
 		<-d.exited
 		d.exited = nil
@@ -242,7 +249,13 @@ func scan(dir string) (map[string]fileState, error) {
 	files := map[string]fileState{}
 	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if path == dir {
+				return err
+			}
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir // unreadable; nothing to watch there
+			}
+			return nil // gone between the listing and the stat
 		}
 		name := entry.Name()
 		if entry.IsDir() {
@@ -256,7 +269,7 @@ func scan(dir string) (map[string]fileState, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return err
+			return nil //nolint:nilerr // replaced by the editor mid-scan; the next scan sees it
 		}
 		files[path] = fileState{size: info.Size(), modTime: info.ModTime()}
 		return nil
