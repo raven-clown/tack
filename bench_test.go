@@ -110,7 +110,7 @@ func TestAllocations(t *testing.T) {
 	}{
 		{"empty", http.MethodGet, "/ping", "", empty, 0},
 		{"path+query+validate", http.MethodGet, "/pets/7?limit=5", "", app, 1},
-		{"json-body", http.MethodPost, "/pets", `{"name":"Milo","age":3}`, app, 6},
+		{"json-body", http.MethodPost, "/pets", `{"name":"Milo","age":3}`, app, 3},
 		{"validation-error", http.MethodGet, "/pets/0?limit=5", "", app, 9},
 	}
 	for _, tt := range tests {

@@ -52,20 +52,33 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 ## Package layout
 
 ```text
-/                   Public API: App, Config, Get/Post/Put/Patch/Delete,
-                    Group, route options, errors, context helpers
-/internal/bind      Builds and executes bind plans (request → struct)
+/                   Public API, one file per concern:
+                    app.go       App, Config, New, Use, Router
+                    group.go     Group
+                    route.go     Get/Post/..., route options, the request handler
+                    errors.go    Error, DefineError, ErrorHandler, problem+json
+                    security.go  Bearer, Basic, APIKey
+                    context.go   ContextValue
+                    output.go    output plans: Body, Status, header fields
+                    validate.go  validator glue: locations, messages, dive checks
+                    openapi.go   document building, /openapi.json, /docs
+                    stream.go    Stream and Event for server-sent events
+                    server.go    Run and Serve with graceful shutdown
+/internal/bind      Bind plans (request → struct), the query scanner, form
+                    parsing, and the compiled validate checks
 /internal/schema    Converts Go types to JSON Schema 2020-12 + schema registry
 /openapi            OpenAPI 3.1 document types
 /tsgen              Generates the TypeScript client and Zod schemas from the OpenAPI document
 /internal/mock      Serves example responses for a document (tack mock)
-/cmd/tack           CLI: gen ts, gen zod, check, dev, mock, new, version (spec, diff, build planned)
+/cmd/tack           CLI, one file per subcommand: main.go (dispatch, usage),
+                    gen.go (gen, check), spec.go (loading documents), dev.go,
+                    mock.go, new.go, version.go; template/ for tack new
 /tacktest           Typed test client (v1.3)
 /examples           Runnable example projects (each its own module if it has extra deps)
 /bench              Benchmarks against other frameworks (separate module)
 ```
 
-Packages under `internal/` may change freely. Anything at the root is public API and follows semver.
+Packages under `internal/` may change freely. Anything at the root is public API and follows semver. The root holds only what the public API needs to be in one package: the types, the registration and request path, and the glue to the validator and the document. Reusable mechanics with no exported surface (binding, the query scanner, compiled checks, schema conversion, the mock) live under `internal/`.
 
 ## Core components
 
@@ -98,9 +111,9 @@ At registration, the `In` type is analyzed once to produce a **plan**: a flat li
 | `form:"caption"` | Multipart or URL-encoded form value; `*multipart.FileHeader` fields are files | |
 | `json:"name"` | JSON request body | |
 
-Each step holds the field index path, the source, the name, and a **converter** chosen up front (string → int, string → `time.Time`, etc.). At request time, executing the plan is a loop with no reflection on types — only `reflect.Value` field sets at known indices.
+Each step holds the field index path, the source, the name, and a **converter** chosen up front (string → int, string → `time.Time`, etc.). At request time, executing the plan is a loop with no reflection on types, only `reflect.Value` field sets at known indices.
 
-A plan with `form` fields parses the body first: `r.ParseMultipartForm` for `multipart/form-data` (32 MiB in memory, the rest in temporary files the route removes after the handler) or `r.ParseForm` for `application/x-www-form-urlencoded`; anything else is a 415. Values then bind from `r.PostForm` like query values, and file steps copy the `*multipart.FileHeader`s from `r.MultipartForm.File`. A body whose length is known to exceed `Config.MaxBodyBytes` is refused before it is read; a chunked one is cut off by `http.MaxBytesReader`, which the multipart reader hides as an EOF, so the plan probes the reader to report a 413 rather than a 400.
+A `form` plan is accepted on POST, PUT, and PATCH only, since `net/http` reads form bodies for those methods; registration panics otherwise. A plan with `form` fields parses the body first: `r.ParseMultipartForm` for `multipart/form-data` (32 MiB in memory, the rest in temporary files the route removes after the handler) or `r.ParseForm` for `application/x-www-form-urlencoded`; anything else is a 415. Values then bind from `r.PostForm` like query values, and file steps copy the `*multipart.FileHeader`s from `r.MultipartForm.File`. A body whose length is known to exceed `Config.MaxBodyBytes` is refused before it is read; a chunked one is cut off by `http.MaxBytesReader`, which the multipart reader hides as an EOF, so the plan probes the reader to report a 413 rather than a 400.
 
 ### Validation
 
@@ -110,19 +123,19 @@ Validation is delegated to `go-playground/validator/v10`, wrapped so that:
 - locations are reported as `body.name`, `query.page`, `path.id`,
 - messages are human-readable.
 
-A route whose `validate` tags are all simple rules (`required`, `omitempty`, `min`, `max`, `gte`, `lte`, `gt`, `lt`, `len`, `eq`, `oneof`) on scalar parameters does not call the validator at all: `compileChecks` turns the tags into comparisons at registration and `runChecks` runs them per request, reporting the first failing rule of each field with the same messages. A body with rules, a slice, a pointer to a struct with anything but `required`, or an unknown rule makes the whole input fall back to the validator, so every rule it supports keeps working.
+A route whose `validate` tags are all simple rules (`required`, `omitempty`, `min`, `max`, `gte`, `lte`, `gt`, `lt`, `len`, `eq`, `oneof`) on scalar parameters does not call the validator at all: `bind.Compile` turns the tags into comparisons at registration and `bind.Run` runs them per request, reporting the first failing rule of each field with the same messages. Parameters are parsed the way the validator parses them (integers as `int64`, `float32` bounds at 32 bits, `oneof` options compared as the validator spells the value), a non-nil pointer counts as present whatever it points to, and `required` or `omitempty` after another rule keeps the validator's order. A rule on the `Body` field or on a field tack does not bind, a slice, a pointer to a struct with anything but `required`, or an unknown rule makes the whole input fall back to the validator, so every rule it supports keeps working. A test runs both paths on the same inputs and expects identical errors. On the validator path, registration runs the validator once on a zero input, so a rule it does not know panics at startup with the route and the fix rather than on the first request.
 
 ### Streams
 
-`Stream[T]` is a named function type, `func(yield func(T) bool)`, so it is both an iterator and a type with methods: every instantiation implements an unexported interface with `serve`, which the route calls through a type assertion, not reflection. `serve` sets `text/event-stream`, flushes the headers, then drives the iterator, writing `data:` (and `event:`/`id:` for `Event[T]`) lines and flushing after each event. It stops when the request context is done or a write fails, and `yield` returns false so the producer's loop ends too. An encoding failure cannot become a problem response once the stream is open, so it is sent as an `error` event. At registration, `newOutput` records the item type (the `Data` type for `Event[T]`), which the document uses as the response schema; a `Stream` inside an output wrapper is rejected.
+`Stream[T]` is a named function type, `func(yield func(T) bool)`, so it is both an iterator and a type with methods: every instantiation implements an unexported interface with `serve`, which the route calls through a type assertion, not reflection. `serve` first checks that the `ResponseWriter`, or a writer it unwraps to, can flush, and returns an error (a 500 problem) otherwise, since events that never leave a buffer are worse than a failure. It then sets `text/event-stream`, flushes the headers, then drives the iterator, writing `data:` (and `event:`/`id:` for `Event[T]`) lines and flushing after each event. It stops when the request context is done or a write fails, and `yield` returns false so the producer's loop ends too. An encoding failure cannot become a problem response once the stream is open, so it is sent as an `error` event. At registration, `newOutput` records the item type (the `Data` type for `Event[T]`), which the document uses as the response schema; a `Stream` inside an output wrapper is rejected, and so is an item that only embeds or points to `Event`.
 
 ### Serving
 
-`App.Run` and `App.Serve` own the listener and the shutdown. The server's `BaseContext` is a context canceled from `RegisterOnShutdown`, so when `ctx` is done every in-flight request (streams included) sees its context canceled while `Shutdown` waits up to `ShutdownTimeout` for handlers to return. A caller's `BaseContext` is kept and merged with `context.AfterFunc`.
+`App.Run` and `App.Serve` own the listener and the shutdown. The server's `BaseContext` is a context canceled from `RegisterOnShutdown`, so when `ctx` is done every in-flight request (streams included) sees its context canceled while `Shutdown` waits up to `ShutdownTimeout` for handlers to return. A caller's `BaseContext` is kept and merged with `context.AfterFunc`. `Serve` returns nil after a clean shutdown whether `ctx` or a direct `srv.Shutdown` ended it.
 
 ### Output plan
 
-The `Out` type is analyzed once as well. A struct with a field named `Body` is an output wrapper: `Body` is encoded as JSON, an untagged `int` field named `Status` overrides the status code when it is not zero, and `header`-tagged fields become response headers, each with a formatter chosen at registration (string, bool, numbers, `time.Time` as RFC 3339, `encoding.TextMarshaler`, and pointers or slices of those). Nil pointers, empty slices, and empty strings send no header. A struct without `Body` is the body itself, and registration panics if it has `header` fields or an untagged `int` `Status`, since that is almost always a forgotten `Body`.
+The `Out` type is analyzed once as well. A struct with a field named `Body` is an output wrapper: `Body` is encoded as JSON, an untagged `int` field named `Status` overrides the status code when it is not zero, and `header`-tagged fields become response headers, each with a formatter chosen at registration (string, bool, numbers, `time.Time` as RFC 3339, `encoding.TextMarshaler`, and pointers or slices of those). Nil pointers, empty slices, and empty strings send no header. A struct without `Body` is the body itself, and registration panics if it has `header` fields or an untagged `int` `Status`, since that is almost always a forgotten `Body`. The body is encoded before the headers are added, so a value that cannot be encoded produces a plain 500 problem without the handler's headers. With `Config.Dev`, a `Status` the route does not document logs a warning.
 
 ### Errors
 
@@ -139,7 +152,7 @@ All errors leaving tack are RFC 9457 `application/problem+json` with a `code` me
 | Error implementing `HTTPStatus() int` | that status | none |
 | Any other error from handler | 500, details hidden, logged via `slog` | `internal` |
 
-Every error goes through one path: `problem` maps the handler's error to an `*Error` (keeping the original as its cause), 5xx errors are logged, and then either `Config.ErrorHandler` or the default problem+json writer sends it. `App.WriteError` exposes that path to middleware. With `Config.Dev`, a handler returning a typed error the route did not declare logs a warning.
+Every error goes through one path: `problem` maps the handler's error to an `*Error` (keeping the original as its cause), 5xx errors are logged, and then either `Config.ErrorHandler` or the default problem+json writer sends it. Responses and problems share one pool of JSON encoders and set `Content-Type` through a shared slice, so neither allocates for the header. `App.WriteError` exposes that path to middleware. With `Config.Dev`, a handler returning a typed error the route did not declare logs a warning.
 
 In the OpenAPI document each declared error code becomes a component named after it, such as `PetNotFoundProblem`: `allOf` of `ProblemDetails` and an object whose `code` is an enum with that one value. A response status lists its codes with `oneOf`. The code to status mapping is tracked per app so one code cannot be documented with two statuses.
 
@@ -149,7 +162,7 @@ In the OpenAPI document each declared error code becomes a component named after
 
 ### Schema registry (`internal/schema`)
 
-Converts `reflect.Type` to JSON Schema 2020-12. Named types are stored once in a registry and referenced by `$ref`, which also handles recursive types. Name collisions across packages are resolved by prefixing the package name. Struct tags (`json`, `validate`, `doc`, `example`) map onto schema keywords such as `minimum`, `maxLength`, `enum`, `format`, and `description`. Types can override their schema by implementing `openapi.SchemaProvider`. An object property is required when encoding/json always writes it (no `omitempty` or `omitzero`, not a pointer) or when it has `validate:"required"`.
+Converts `reflect.Type` to JSON Schema 2020-12. Named types are stored once in a registry and referenced by `$ref`, which also handles recursive types. Name collisions across packages are resolved by prefixing the package name. Struct tags (`json`, `validate`, `doc`, `example`) map onto schema keywords such as `minimum`, `maxLength`, `enum`, `format`, and `description`. A pointer field is nullable unless it has `validate:"required"`, which rejects `null`. Types can override their schema by implementing `openapi.SchemaProvider`. An object property is required when encoding/json always writes it (no `omitempty` or `omitzero`, not a pointer) or when it has `validate:"required"`.
 
 ### OpenAPI (`openapi`)
 
@@ -159,7 +172,7 @@ The `openapi` package only defines the document types. Each route adds its opera
 
 Generates TypeScript **from the OpenAPI document**, not by reflecting on Go types again. This guarantees the client, the spec, and `/docs` always agree, and it is why `tack gen ts` reading the JSON produces the same bytes as `tsgen.Generate` in process (there is a test). Output is a single dependency-free file using `fetch`, and it is deterministic: schemas, operations, and properties are sorted, so the file changes only when the API does and `tsgen.Check` can compare bytes (after normalizing CRLF).
 
-Generation has two passes. `collect` validates the document and plans every TypeScript name first, so a problem (duplicate operation IDs, an ID that is not an identifier, a schema that needs a name the runtime or another operation uses, two parameters with one name, a non-JSON body, several success responses) is reported once with a fix instead of as broken output. `emit` then writes, in order: the `Client` class with one method per operation, the shared runtime (`ClientOptions`, `Result`, `ApiError`, `unwrap`, the request sender, and the credential logic), one `Input`, `Error`, and `Headers` type per operation, and one type per component schema.
+Generation has two passes. `collect` validates the document and plans every TypeScript name first, so a problem (duplicate operation IDs, an ID that is not an identifier, a schema that needs a name the runtime or another operation uses, or a global such as `Response` or `Error` that the runtime relies on, two parameters with one name, a non-JSON body, several success responses) is reported once with a fix instead of as broken output. `emit` then writes, in order: the `Client` class with one method per operation, the shared runtime (`ClientOptions`, `Result`, `ApiError`, `unwrap`, the request sender, and the credential logic), one `Input`, `Error`, and `Headers` type per operation, and one type per component schema.
 
 Each method passes a small literal to the shared `send`: method, path template, the names of the query and header parameters, whether there is a body, the success status and whether it carries JSON, the documented error statuses, the response headers with how to parse each (`number`, `boolean`, comma-separated `array` or `numbers`), and the security alternatives. At runtime `send` builds the URL (path parameters URL-encoded, arrays as repeated query keys), applies the first security alternative for which every credential is set, sends JSON, and classifies the response: the documented success status is `{ ok: true }` with the parsed body and headers; a documented error status with a JSON body is `{ ok: false }` typed as the union of that operation's problem schemas; anything else is thrown as `ApiError` so the union never lies. Cookie parameters are left out of the input, because browsers send them.
 
@@ -167,11 +180,11 @@ Schema mapping: `$ref` to the component's name, `allOf` to an intersection (whic
 
 ### Zod generation (`tsgen.GenerateZod`)
 
-The same `collect` pass plans the names, then a second emitter writes a separate file that imports `zod`, so the client stays dependency-free. Component schemas are written in dependency order (a depth-first walk of their `$ref`s); a schema that can reach itself is written as `const X: z.ZodType<X> = z.lazy(() => ...)` with the type spelled out the way the client spells it, since `z.infer` cannot name a lazy schema. Keywords map to Zod calls: `minimum`/`maximum`/exclusive bounds to `.min`/`.max`/`.gt`/`.lt`, lengths and item counts to `.min`/`.max`, `pattern` to `.regex(new RegExp(...))`, `format` to `.email()`, `.uuid()`, `.url()`, `.datetime()`, `enum` to `z.enum` or a union of literals, `allOf` to `.and`, `oneOf`/`anyOf` to `z.union`, nullable to `.nullable()`, a missing `required` entry to `.optional()`, and `default` to `.default(v)`. Every operation with parameters or a body also gets an `XInput` object schema. Only the calls shared by Zod 3.23 and Zod 4 are used; the end-to-end test runs the output with Zod 4.
+The same `collect` pass plans the names, then a second emitter writes a separate file that imports `zod`, so the client stays dependency-free. Component schemas are written in dependency order (a depth-first walk of their `$ref`s); a schema that can reach itself is written as `const X: z.ZodType<X> = z.lazy(() => ...)` with the type spelled out the way the client spells it, since `z.infer` cannot name a lazy schema. Keywords map to Zod calls: `minimum`/`maximum`/exclusive bounds to `.min`/`.max`/`.gt`/`.lt`, lengths and item counts to `.min`/`.max`, `pattern` to `.regex(new RegExp(...))`, `format` to `.email()`, `.uuid()`, `.url()`, `.datetime({ offset: true })` (Go writes offsets for non-UTC times), `enum` to `z.enum` or a union of literals, `allOf` to `.and`, `oneOf`/`anyOf` to `z.union`, nullable to `.nullable()`, a missing `required` entry to `.optional()`, and `default` to `.default(v)`. Every operation with parameters or a body also gets an `XInput` object schema. Only the calls shared by Zod 3.23 and Zod 4 are used; the end-to-end test runs the output with Zod 4.
 
 ### Mock server (`internal/mock`)
 
-`mock.Handler(doc)` registers one `ServeMux` route per operation and prepares every documented response once: the body is built from the response schema by `example`, which prefers `examples`, then `default`, then the first `enum` value, and otherwise derives a value from the type, format, bounds, and property name, merging `allOf` and taking the first `oneOf`/`anyOf` alternative; recursion through `$ref` stops after four levels. A problem body gets the real status, title, and the detail the error was defined with. A `text/event-stream` response is sent as one `data:` event. The success status is served by default; a `Prefer: code=NNN` header selects another documented status, and an undocumented one is a 400 with code `undocumented_status`. OpenAPI paths are exact, so a path ending in `/` is registered with `{$}`. The handler adds cross-origin headers to every response, answers preflight requests, and serves the document at `/openapi.json`. Requests are not validated.
+`mock.Handler(doc)` registers one `ServeMux` route per operation and prepares every documented response once: the body is built from the response schema by `example`, which prefers `examples`, then `default`, then the first `enum` value, and otherwise derives a value from the type, format, bounds, and property name, merging `allOf` and taking the first `oneOf`/`anyOf` alternative; recursion through `$ref` stops after four levels. A problem body gets the real status, title, and the detail the error was defined with. A `text/event-stream` response is sent as one `data:` event. The success status is served by default; a `Prefer: code=NNN` header selects another documented status, and an undocumented one is a 400 with code `undocumented_status`. OpenAPI paths are exact, so a path ending in `/` is registered with `{$}`; a path `ServeMux` cannot register, such as `/files/{name}.json`, is an error naming the operation. Example sizes from `minLength` and `minItems` are capped so a document cannot make the mock allocate without bound. The handler adds cross-origin headers to every response, answers preflight requests allowing the headers the browser asked for (the `*` wildcard never covers `Authorization`), and serves the document at `/openapi.json`. Requests are not validated.
 
 ### Project template (`tack new`)
 
@@ -179,12 +192,12 @@ The files under `cmd/tack/template` are `text/template` sources (named `.tmpl` s
 
 ### Dev loop (`tack dev`)
 
-`devLoop` has no dependency on a file watcher: every 500 ms it rescans the directory for `.go`, `go.mod`, and `go.sum` files (skipping hidden directories, `node_modules`, `vendor`, and `testdata`) and compares sizes and modification times. On a change it runs `go build -o <tmp>/app .`, and only on success kills the running app and starts the new binary, so a typo never takes the app down. It then polls the document URL until the app answers, generates the client (and schemas with `-zod`), and writes each file only when its content changed, so editors and type checkers are not woken for nothing. With a command after `--` the build step is skipped and the command is restarted instead. The dev tests build and edit a small stdlib-only program, and use the test binary itself as the `--` command.
+`devLoop` has no dependency on a file watcher: every 500 ms it rescans the directory for `.go`, `go.mod`, and `go.sum` files (skipping hidden directories, `node_modules`, `vendor`, and `testdata`) and compares sizes and modification times. A file that disappears or cannot be read between the listing and the stat is skipped rather than ending the loop. On a change it runs `go build -o <tmp>/app .`, and only on success kills the running app and starts the new binary, so a typo never takes the app down. The app runs in its own process group (through `taskkill /T` on Windows), so a launcher such as `go run` after `--` does not leave the real server behind on restart. It then polls the document URL until the app answers, generates the client (and schemas with `-zod`), and writes each file only when its content changed, so editors and type checkers are not woken for nothing. With a command after `--` the build step is skipped and the command is restarted instead. The dev tests build and edit a small stdlib-only program, and use the test binary itself as the `--` command.
 
 ## Dependencies
 
 - **Core:** `github.com/go-playground/validator/v10` only. Adding any other core dependency requires maintainer approval.
-- **Tests:** test-only dependencies are fine (e.g. `kin-openapi` to validate generated specs, `chi` to prove stock middleware works, `goleak` for goroutine leaks).
+- **Tests:** test-only dependencies are fine (`kin-openapi` to validate generated specs, `chi` to prove stock middleware works, `goleak` for goroutine leaks). They appear in `go.mod`, but a program importing `tack` links only the validator and its dependencies: eight modules in `go list -deps`.
 - **Benchmarks and examples** live in separate modules so their dependencies never reach users.
 
 ## Testing strategy
@@ -193,7 +206,9 @@ The files under `cmd/tack/template` are `text/template` sources (named `.tmpl` s
 - **Golden files** in `testdata/` for generated JSON Schema, OpenAPI, and TypeScript. Update with `go test ./... -update`.
 - The generated client is **run end to end**: a test compiles it with `tsc --strict` and runs it with node against an `httptest` server, covering parameters, bodies, typed errors, headers, 204, credentials, and an undocumented response; the Zod schemas are run the same way after `npm install zod`. It is skipped when `tsc` or `node` is not on PATH; CI installs both.
 - Generated specs are validated against the OpenAPI 3.1 spec in tests.
-- Fuzz tests for binding and parsing (v0.9+).
+- Fuzz tests for the query scanner (held to `url.ParseQuery`), JSON and form binding (every failure is a 4xx bind error), header lists, and path patterns. CI runs each target for 20 seconds.
+- The README's Go blocks are compiled against the checkout by a test, so the examples cannot drift from the API.
+- `goleak` checks the stream, server, and `tack dev` tests for leaked goroutines.
 - `go test -race` always runs in CI.
 
 ## Decision log
