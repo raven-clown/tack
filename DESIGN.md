@@ -13,6 +13,7 @@ This file records the design decisions behind tack's public API: the options con
 | D5 | Tags and defaults | `path`, `query`, `header`, `cookie`, `default`; pointers mean optional | Decided |
 | D6 | Groups and middleware | `App.Group(prefix, mw...)` and `Group.With(opts...)`; plain `func(http.Handler) http.Handler` at app, group, and route level | Decided |
 | D7 | Typed errors | `DefineError(status, code, detail)` returns an `*Error` with a `code`; `Errors(...)` documents them per route, one schema per code | Decided |
+| D8 | TypeScript client | One fetch-based file generated from the OpenAPI document; methods return a `Result` whose error is the union of the declared problems; undocumented responses throw; `tsgen.Check` in a test keeps the file fresh | Decided |
 
 ## Prior art
 
@@ -244,7 +245,7 @@ return Pet{}, ErrPetNotFound.WithDetail(fmt.Sprintf("pet %d not found", id))
 ```
 
 - Yes: no new type. The value is an error, `errors.Is` works on copies made with `WithDetail` because `Is` compares code and status, and `Errors(ErrPetNotFound)` documents it.
-- Yes: `code` is the discriminator the v0.4 TypeScript client needs, independent of the human-readable detail.
+- Yes: `code` is the discriminator the TypeScript client (D8) needs, independent of the human-readable detail.
 - No: the variable is shared, so handlers must not mutate it (the same rule as any sentinel error).
 
 **B. A separate `ErrorDef` type with `New()`**
@@ -256,6 +257,41 @@ return Pet{}, ErrPetNotFound.WithDetail(fmt.Sprintf("pet %d not found", id))
 - No: two 404s with different meanings could not be told apart by a client.
 
 One schema per code (`PetNotFoundProblem` = `allOf` of `ProblemDetails` and `{code: enum [pet_not_found]}`) rather than an inline schema per response, so generators get a named type and a status with several codes is a `oneOf` of named types. The code is the identity: declaring the same code with a different status or default detail panics at registration.
+
+## D8. TypeScript client
+
+**A. Methods return a `Result` union; undocumented responses throw (chosen)**
+
+```ts
+const res = await api.getPetsById({ id: 7 });
+if (!res.ok) {
+  switch (res.error.code) {
+    case "pet_not_found": ...   // GetPetsByIdError = PetNotFoundProblem | ValidationFailedProblem | InternalProblem
+  }
+}
+res.data.name;
+```
+
+- Yes: `catch (e)` gives `unknown`, so a thrown error cannot carry the union the route declares; a returned value can. The discriminant is `code`, which D7 made the identity of an error, and `allOf` maps to a TypeScript intersection, so `PetNotFoundProblem` is `ProblemDetails & { code: "pet_not_found" }` with no generator-specific trick.
+- Yes: a 502 from a proxy, or a 401 from middleware on a route without `Security`, is not in the document. Returning it would make the union lie, so it is thrown as `ApiError`; network failures were always exceptions. The rule is one line: documented responses are values, everything else throws. `unwrap(res)` throws the same class for code that prefers exceptions.
+- No: two ways to fail. Accepted, because the two are different kinds of failure: one the API designed, one it did not.
+
+**B. Throw a typed error class (Encore, tRPC style)**
+
+- No: the type is lost at `catch`, and every caller writes `instanceof` and a cast before it can switch on the code.
+
+**C. Return the data and throw on any non-2xx**
+
+- No: the same loss, and callers forget to catch.
+
+Sub-decisions under A:
+
+- **Generated from the OpenAPI document, not from Go types.** The client cannot disagree with `/docs`, and `tack gen ts` works from a served or exported document. Reading the document back from JSON must produce byte-identical output to generating in process; a test checks it.
+- **Input is one flat object:** the parameters by their wire names (`id`, `limit`, `"X-API-Key"`) plus `body`, mirroring the Go input struct. Two parameters with one name in different locations fail generation rather than being renamed. Cookie parameters are left out, with a note on the method: browsers send them.
+- **Name collisions fail generation** with the fix, as registration panics do: a schema named `Client` or `Result`, or a schema `GetPetsError` next to an operation `getPets`. Silent renaming was rejected because a name that changes on the next regeneration breaks every consumer.
+- **Documented response headers are parsed by their schema** (`number`, `boolean`, comma-separated arrays) into a typed `headers` object; everything else stays on `response.headers`.
+- **The output is deterministic**: schemas, operations, and properties are sorted, so the file changes only when the API does, diffs are small, and `tsgen.Check` is a byte comparison with CRLF normalized.
+- **Freshness is a test first and a command second.** `tsgen.Check(app.OpenAPI(), "client/api.ts")` in a Go test needs no running server and no exported file, and runs wherever the code's tests run; `tack check` covers CI setups that already export the document.
 
 ## Decisions
 
@@ -287,6 +323,10 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Runtime `Status` (v0.3) | Must be 2xx or 3xx, like the `Status` option; anything else is a 500 | Failures go through errors so they get problem+json and appear in the spec |
 | Empty response headers (v0.3) | Nil pointers, empty slices, and empty strings are not sent and are optional in the spec | `Location: ` with no value is never wanted |
 | `time.Time` headers (v0.3) | RFC 3339 | Mirrors the input side; use a string field for HTTP-date headers such as `Last-Modified` |
+| Client runtime size (v0.4) | One shared `send` with a small literal per operation, about 150 lines in all | Readable methods, one place to fix, and no dependency to install or update |
+| Credentials (v0.4) | `ClientOptions.credentials` keyed by scheme name, a string or an async function; the first security alternative with every credential set is sent | Mirrors the document's alternatives; a function covers tokens that refresh |
+| Numbers in the client (v0.4) | Every integer and number is `number`, whatever its format | `int64` beyond 2^53 loses precision in JavaScript either way; a `string` field is the fix on the Go side |
+| Empty success body (v0.4) | `data` is `undefined` for 204 and for a `Content-Length: 0` response; otherwise the body must be JSON | Matches what tack sends; a 200 with an empty body is a server bug, and `response.json()` reports it |
 
 ## Prototype
 

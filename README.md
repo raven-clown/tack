@@ -64,7 +64,7 @@ That's it. You now have:
 - **OpenAPI 3.1** at `/openapi.json` — always in sync with your code
 - **Interactive docs** at `/docs`, including the auth schemes you declare
 - **Typed errors** declared per route and listed in the docs by code
-- **TypeScript client** generated from the same types *(v0.4)*
+- **TypeScript client** generated from the same types, where the errors a route declares form a typed union
 
 ## Installation
 
@@ -111,7 +111,7 @@ Send a bad request and get every problem at once — not just the first one:
 
 ### Errors your clients can switch on
 
-Define an error once, return it from handlers, and declare it on the routes that can produce it. It shows up in `/docs` under its status with a stable `code`, which the TypeScript client (v0.4) turns into a typed union:
+Define an error once, return it from handlers, and declare it on the routes that can produce it. It shows up in `/docs` under its status with a stable `code`, which the TypeScript client turns into a typed union:
 
 ```go
 var ErrPetNotFound = tack.DefineError(http.StatusNotFound, "pet_not_found", "pet not found")
@@ -126,6 +126,47 @@ tack.Get(app, "/pets/{id}", func(ctx context.Context, in GetPetInput) (Pet, erro
 ```
 
 Every route also documents `validation_failed` (422) and `internal` (500). Replace the whole error format with `Config.ErrorHandler`.
+
+### A TypeScript client that cannot go stale
+
+`tsgen` turns the OpenAPI document into one dependency-free TypeScript file built on `fetch`. Each route is a method whose result is either the typed data or one of the problems the route declares, so the frontend switches on `code` and the compiler knows which codes exist:
+
+```ts
+import { Client } from "./api";
+
+const api = new Client({ baseUrl: "https://api.example.com", credentials: { bearer: () => token } });
+
+const res = await api.getPetsById({ id: 7 });
+if (!res.ok) {
+  switch (res.error.code) {
+    case "pet_not_found":      // only the codes this route declares compile here
+      return showNotFound(res.error.detail);
+    case "validation_failed":
+      return showErrors(res.error.errors);
+  }
+}
+res.data.name;                 // Pet
+```
+
+Generate the client where the routes are, and let the same test fail CI when the committed file is older than the code:
+
+```go
+func TestClient(t *testing.T) {
+	if err := tsgen.Check(newApp().OpenAPI(), "client/api.ts"); err != nil {
+		t.Fatal(err) // regenerate with tsgen.Generate, or go test . -update
+	}
+}
+```
+
+The `tack` command does the same from a running server or an exported document:
+
+```bash
+go install github.com/raven-clown/tack/cmd/tack@latest
+tack gen ts -spec http://localhost:8080/openapi.json -o client/api.ts
+tack check  -spec openapi.json client/api.ts   # exit 1 when stale
+```
+
+Responses the document does not describe, such as a proxy's 502, are thrown as `ApiError`; `unwrap(res)` throws the same class for code that prefers exceptions. See [examples/petstore/client/api.ts](examples/petstore/client/api.ts) for a generated file.
 
 ### Groups and middleware
 
@@ -177,14 +218,14 @@ Declare a route with `{id}` in the path but no matching `path:"id"` field? tack 
 
 <p align="center"><img src=".github/assets/how-tack-works.gif" width="460" alt="The same field rename across six approaches: by hand, swaggo, oapi-codegen, Huma, Encore, and tack"></p>
 
-<p align="center"><sub>The same field rename, six approaches. The TypeScript client shown for tack arrives in v0.4. Source: <a href=".github/assets/how-tack-works.html">how-tack-works.html</a>.</sub></p>
+<p align="center"><sub>The same field rename, six approaches. Source: <a href=".github/assets/how-tack-works.html">how-tack-works.html</a>.</sub></p>
 
 | | net/http only | Gin / Echo / Fiber | **tack** |
 | --- | --- | --- | --- |
 | Typed handlers | No | No | Yes |
 | Validation built in | No | Partial | Yes |
 | OpenAPI from code | No | Via plugins / comments | Yes |
-| TypeScript client | No | No | Yes *(v0.4)* |
+| TypeScript client | No | No | Yes |
 | Standard `http.Handler` | Yes | Varies | Yes |
 
 ## Prior art and inspiration
@@ -216,7 +257,7 @@ The public launch is planned for v0.5, once the parts that set tack apart are al
 | v0.1 | Core: typed handlers, binding, validation, errors | Done |
 | v0.2 | OpenAPI 3.1 + `/docs` | Done |
 | v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Done |
-| v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Planned |
+| v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Done |
 | v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Planned |
 | v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Planned |
 | v0.9 | Release candidate: API review, fuzzing, benchmarks | Planned |

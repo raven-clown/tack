@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+### Added
+
+- `tsgen`: `Generate(doc)` turns the OpenAPI document into one dependency-free TypeScript file built on `fetch`. Every operation is a method on `Client` that returns a `Result`: `{ ok: true, data, headers, response }` with the response type and the documented headers parsed, or `{ ok: false, error, response }` where `error` is the union of the problem schemas the route declares, so `switch (res.error.code)` is checked by the compiler. Responses the document does not describe are thrown as `ApiError`, and `unwrap(res)` throws it for error results. `ClientOptions` takes `baseUrl`, `fetch`, default `headers`, and `credentials` by security scheme name, which the client sends as `Authorization: Bearer`, `Authorization: Basic`, or the API key header or query parameter the scheme names. Output is deterministic and sorted, so the file changes only when the API does.
+- `tsgen.Check(doc, path)` returns an error wrapping `tsgen.ErrStale` when the file is missing or differs from the document, for a test that fails CI when the committed client is older than the routes.
+- `cmd/tack`: `tack gen ts -spec <file|url|-> [-o api.ts]` writes the client and `tack check -spec <file|url|-> api.ts` exits 1 when it is stale. The document can come from a file, a URL such as `http://localhost:8080/openapi.json`, or standard input.
+- Generation fails with the fix when the document holds something the client cannot express: two operations with one ID, an ID that is not a TypeScript identifier, a schema named like something the client defines (`Client`, `Result`, `GetPetsError` for operation `getPets`), two parameters with one name in different locations, a request body that is not JSON, or several success responses.
+- `examples/petstore` commits its generated `client/api.ts` and a test that fails when it is stale (`go test . -update` regenerates it). CI checks the same file with `tack check` from the served document and runs the client end to end with node.
+
 ## [0.3.0] - 2026-10-11
 
 ### Breaking
