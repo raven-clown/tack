@@ -30,6 +30,7 @@ jobs:
       - name: Test
         run: go test -race ./...
       - name: Allocation budgets
+        if: matrix.go == 'stable'
         run: go test -run TestAllocations -count=1 .
       - name: Test examples/auth
         working-directory: examples/auth
