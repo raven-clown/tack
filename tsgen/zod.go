@@ -232,7 +232,7 @@ func (z *zodGen) base(s *openapi.Schema, top bool) string {
 		case "uri":
 			e += ".url()"
 		case "date-time":
-			e += ".datetime()"
+			e += ".datetime({ offset: true })"
 		}
 		if s.MinLength != nil {
 			e += ".min(" + strconv.Itoa(*s.MinLength) + ")"

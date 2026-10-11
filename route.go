@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/go-playground/validator/v10"
 
 	"github.com/raven-clown/tack/internal/bind"
 	"github.com/raven-clown/tack/openapi"
@@ -186,10 +189,15 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 	if err := checkDive(t, "", map[reflect.Type]bool{}); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
-	check := hasValidateTags(t, map[reflect.Type]bool{})
-	checks, compiled := compileChecks(plan)
+	check := bind.HasValidateTags(t, map[reflect.Type]bool{})
+	checks, compiled := bind.Compile(plan, t)
 	if compiled && len(checks) == 0 {
 		check = false // nothing to validate at all
+	}
+	if check && !compiled {
+		if err := probeValidator(a.validate, t); err != nil {
+			panic(fmt.Sprintf("tack: %s: %v", name, err))
+		}
 	}
 	locs := plan.Locations()
 	prefix := ""
@@ -204,17 +212,33 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		rt.statuses[e.Status] = true
 	}
 	hasForm, _ := plan.HasForm()
+	if hasForm && method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
+		panic(fmt.Sprintf("tack: %s: form fields need a request body, which net/http reads for POST, PUT, and PATCH only; use query tags or change the method", name))
+	}
 	// Inputs are pooled: binding and validation need a pointer, which would
 	// otherwise move every request's input to the heap. The handler gets a
 	// copy, so the pooled value is never shared. An input with nothing to
 	// bind skips all of that.
 	inputs := sync.Pool{New: func() any { return new(In) }}
+	// Outputs are pooled too: the encoder needs an addressable value, and
+	// would otherwise copy every result to the heap. Streams are sent as is.
+	outputs := sync.Pool{New: func() any { return new(Out) }}
+	finish := func(w http.ResponseWriter, req *http.Request, res Out, err error) {
+		if out.stream || err != nil {
+			a.finish(w, req, rt, out, cfg.status, res, err)
+			return
+		}
+		op := outputs.Get().(*Out)
+		*op = res
+		a.finish(w, req, rt, out, cfg.status, op, nil)
+		outputs.Put(op)
+	}
 	noInput := len(plan.Params()) == 0 && !plan.HasBody() && !hasForm
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if noInput {
 			var in In
 			res, err := h(req.Context(), in)
-			a.finish(w, req, rt, out, cfg.status, res, err)
+			finish(w, req, res, err)
 			return
 		}
 		inp := inputs.Get().(*In)
@@ -241,7 +265,7 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		if check {
 			var details []ErrorDetail
 			if compiled {
-				details = runChecks(reflect.ValueOf(inp), checks)
+				details = detailsOf(bind.Run(reflect.ValueOf(inp), checks))
 			} else {
 				details = a.validateInput(inp, prefix, locs)
 			}
@@ -251,7 +275,7 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 			}
 		}
 		res, err := h(req.Context(), *inp)
-		a.finish(w, req, rt, out, cfg.status, res, err)
+		finish(w, req, res, err)
 	})
 	mws := slices.Concat(r.middleware(), cfg.middleware)
 	if err := register(a.mux, name, chain(mws, handler)); err != nil {
@@ -263,7 +287,8 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 }
 
 // finish sends the handler's result: an error, a stream, a wrapped output
-// with status and headers, or a JSON body.
+// with status and headers, or a JSON body. res is a pointer to the result
+// unless it is a stream.
 func (a *App) finish(w http.ResponseWriter, req *http.Request, rt *route, out *output, status int, res any, err error) {
 	if err != nil {
 		a.writeError(w, req, err, rt)
@@ -288,12 +313,42 @@ func (a *App) finish(w http.ResponseWriter, req *http.Request, rt *route, out *o
 		a.writeError(w, req, fmt.Errorf("output Status %d is not a 2xx or 3xx code; return an error for failures", status), rt)
 		return
 	}
+	if a.dev && !rt.statuses[status] {
+		a.logger.WarnContext(req.Context(), "tack: undocumented status", slog.String("route", rt.name), slog.Int("status", status),
+			slog.String("fix", "declare it with tack.Status so it appears in the docs and the generated client accepts it"))
+	}
+	// Encode before adding headers, so a failure's problem response does not
+	// carry the handler's headers.
+	var e *encoder
+	if !noBody(status) {
+		var err error
+		if e, err = encodeJSON(body); err != nil {
+			a.writeError(w, req, fmt.Errorf("encoding response: %w", err), rt)
+			return
+		}
+	}
 	for i, values := range headers {
 		for _, v := range values {
 			w.Header().Add(out.headers[i].name, v)
 		}
 	}
-	a.writeJSON(w, req, rt, status, body)
+	if e == nil {
+		w.WriteHeader(status)
+		return
+	}
+	e.send(w, status)
+}
+
+// probeValidator runs the validator once on a zero input so a rule it does
+// not know fails at registration rather than on the first request.
+func probeValidator(v *validator.Validate, t reflect.Type) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("validate tag: %v; fix the rule or remove it", r)
+		}
+	}()
+	_ = v.Struct(reflect.New(t).Interface())
+	return nil
 }
 
 // jsonContentType is shared between responses. Its length equals its
@@ -344,6 +399,18 @@ var bindCodes = map[int]string{
 	http.StatusUnprocessableEntity:   codeValidation,
 }
 
+// detailsOf converts bind errors; it allocates only when there are some.
+func detailsOf(fields []bind.FieldError) []ErrorDetail {
+	if len(fields) == 0 {
+		return nil
+	}
+	details := make([]ErrorDetail, len(fields))
+	for i, f := range fields {
+		details[i] = ErrorDetail(f)
+	}
+	return details
+}
+
 func (a *App) writeBindError(w http.ResponseWriter, r *http.Request, err error) {
 	var be *bind.Error
 	if !errors.As(err, &be) {
@@ -378,18 +445,36 @@ func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, rt *route, statu
 		w.WriteHeader(status)
 		return
 	}
+	e, err := encodeJSON(v)
+	if err != nil {
+		a.writeError(w, r, fmt.Errorf("encoding response: %w", err), rt)
+		return
+	}
+	e.send(w, status)
+}
+
+// encodeJSON encodes v into a pooled encoder, which send returns to the pool.
+func encodeJSON(v any) (*encoder, error) {
 	e := encoders.Get().(*encoder)
 	e.buf.Reset()
 	if err := e.enc.Encode(v); err != nil {
 		encoders.Put(e)
-		a.writeError(w, r, fmt.Errorf("encoding response: %w", err), rt)
-		return
+		return nil, err
 	}
+	return e, nil
+}
+
+// send writes the encoded JSON with contentType and releases the encoder.
+func (e *encoder) send(w http.ResponseWriter, status int) {
+	e.sendAs(w, status, jsonContentType)
+}
+
+func (e *encoder) sendAs(w http.ResponseWriter, status int, contentType []string) {
 	b := e.buf.Bytes()
 	b = b[:len(b)-1] // Encode ends with a newline.
-	w.Header()["Content-Type"] = jsonContentType
+	w.Header()["Content-Type"] = contentType
 	w.WriteHeader(status)
-	_, _ = w.Write(b)
+	_, _ = w.Write(b) // #nosec G705 -- JSON under an explicit Content-Type
 	if e.buf.Cap() <= maxPooledBuffer {
 		encoders.Put(e)
 	}

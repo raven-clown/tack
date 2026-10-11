@@ -14,11 +14,19 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 // maxFormMemory is how much of a multipart body stays in memory before parts
 // spill to temporary files.
 const maxFormMemory = 32 << 20
+
+// bodies pools the buffers JSON bodies are read into. encoding/json copies
+// what it keeps, so a buffer can be reused once Unmarshal returns.
+var bodies = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// maxPooledBody keeps one huge body from staying in the pool.
+const maxPooledBody = 64 << 10
 
 var (
 	fileType  = reflect.TypeFor[*multipart.FileHeader]()
@@ -450,7 +458,9 @@ func (p *Plan) parseForm(r *http.Request) error {
 	}
 	switch mt {
 	case "multipart/form-data":
-		err = r.ParseMultipartForm(maxFormMemory)
+		// The body is already capped by http.MaxBytesReader in the route and
+		// the memory part by maxFormMemory.
+		err = r.ParseMultipartForm(maxFormMemory) // #nosec G120
 	case "application/x-www-form-urlencoded", "":
 		err = r.ParseForm()
 	default:
@@ -494,13 +504,22 @@ func (p *Plan) bindBody(r *http.Request, v reflect.Value) error {
 	if ct := r.Header.Get("Content-Type"); ct != "" && !isJSON(ct) {
 		return &Error{Status: http.StatusUnsupportedMediaType, Detail: fmt.Sprintf("content type %q is not supported; send application/json", ct)}
 	}
+	buf := bodies.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer func() {
+		if buf.Cap() <= maxPooledBody {
+			bodies.Put(buf)
+		}
+	}()
 	var data []byte
 	if r.Body != nil && r.Body != http.NoBody {
-		b, err := io.ReadAll(r.Body)
-		if err != nil {
+		if n := r.ContentLength; n > 0 && n <= maxPooledBody {
+			buf.Grow(int(n))
+		}
+		if _, err := buf.ReadFrom(r.Body); err != nil {
 			return bodyError(err)
 		}
-		data = bytes.TrimSpace(b)
+		data = bytes.TrimSpace(buf.Bytes())
 	}
 	if len(data) == 0 || string(data) == "null" {
 		if p.body.optional {

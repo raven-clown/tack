@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 type tick struct {
@@ -97,6 +99,8 @@ func TestStream(t *testing.T) {
 }
 
 func TestStreamStopsWhenClientLeaves(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer http.DefaultClient.CloseIdleConnections()
 	app, ended := streamApp(t)
 	srv := httptest.NewServer(app)
 	defer srv.Close()

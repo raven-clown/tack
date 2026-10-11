@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/raven-clown/tack/internal/bind"
 )
 
 func newValidate() *validator.Validate {
@@ -19,23 +21,6 @@ func newValidate() *validator.Validate {
 		return name
 	})
 	return v
-}
-
-func hasValidateTags(t reflect.Type, seen map[reflect.Type]bool) bool {
-	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct || seen[t] {
-		return false
-	}
-	seen[t] = true
-	for i := range t.NumField() {
-		f := t.Field(i)
-		if f.Tag.Get("validate") != "" || hasValidateTags(f.Type, seen) {
-			return true
-		}
-	}
-	return false
 }
 
 const maxErrors = 50
@@ -106,7 +91,7 @@ func checkDive(t reflect.Type, path string, seen map[reflect.Type]bool) error {
 			if ft.Elem().Kind() == reflect.Uint8 {
 				continue
 			}
-			if !strings.Contains(","+f.Tag.Get("validate")+",", ",dive,") && hasValidateTags(ft.Elem(), map[reflect.Type]bool{}) {
+			if !strings.Contains(","+f.Tag.Get("validate")+",", ",dive,") && bind.HasValidateTags(ft.Elem(), map[reflect.Type]bool{}) {
 				return fmt.Errorf("field %s: elements of %s have validate rules that are skipped without dive; add validate:\"dive\" to %s", name, ft, f.Name)
 			}
 			if err := checkDive(ft.Elem(), name+"[].", seen); err != nil {
@@ -122,48 +107,5 @@ func checkDive(t reflect.Type, path string, seen map[reflect.Type]bool) error {
 }
 
 func message(fe validator.FieldError) string {
-	return ruleMessage(fe.Tag(), fe.Param(), fe.Kind())
-}
-
-// ruleMessage is the message for a failed rule, shared by the validator
-// path and the compiled checks so both say the same thing.
-func ruleMessage(tag, p string, kind reflect.Kind) string {
-	switch tag {
-	case "required", "required_if", "required_unless", "required_with", "required_without":
-		return "is required"
-	case "min", "gte":
-		return size(kind, "at least", p)
-	case "max", "lte":
-		return size(kind, "at most", p)
-	case "gt":
-		return size(kind, "more than", p)
-	case "lt":
-		return size(kind, "less than", p)
-	case "eq":
-		if kind == reflect.String {
-			return "must equal " + p
-		}
-		return size(kind, "exactly", p)
-	case "len":
-		return size(kind, "exactly", p)
-	case "email":
-		return "must be a valid email address"
-	case "url", "http_url":
-		return "must be a valid URL"
-	case "uuid", "uuid3", "uuid4", "uuid5":
-		return "must be a valid UUID"
-	case "oneof":
-		return "must be one of: " + strings.Join(strings.Fields(p), ", ")
-	}
-	return fmt.Sprintf("failed the %q rule", tag)
-}
-
-func size(k reflect.Kind, rel, p string) string {
-	switch k {
-	case reflect.String:
-		return fmt.Sprintf("must be %s %s characters long", rel, p)
-	case reflect.Slice, reflect.Array, reflect.Map:
-		return fmt.Sprintf("must have %s %s items", rel, p)
-	}
-	return fmt.Sprintf("must be %s %s", rel, p)
+	return bind.RuleMessage(fe.Tag(), fe.Param(), fe.Kind())
 }

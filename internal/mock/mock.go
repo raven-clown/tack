@@ -47,7 +47,9 @@ func Handler(doc *openapi.Document) (http.Handler, error) {
 			if err != nil {
 				return nil, fmt.Errorf("mock: %s %s: %w", method.name, path, err)
 			}
-			m.mux.Handle(method.name+" "+pattern(path), r)
+			if err := register(m.mux, method.name+" "+pattern(path), r); err != nil {
+				return nil, fmt.Errorf("mock: %s %s: %w; ServeMux needs wildcards to be whole segments", method.name, path, err)
+			}
 			m.routes = append(m.routes, method.name+" "+path)
 		}
 	}
@@ -56,6 +58,17 @@ func Handler(doc *openapi.Document) (http.Handler, error) {
 		_, _ = w.Write(spec)
 	})
 	return m, nil
+}
+
+// register turns the ServeMux panic for a pattern it rejects into an error.
+func register(mux *http.ServeMux, pattern string, h http.Handler) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	mux.Handle(pattern, h)
+	return nil
 }
 
 // Routes lists the operations h serves, as "METHOD /path", when h came from
@@ -90,7 +103,12 @@ func (m *mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Access-Control-Expose-Headers", "*")
 	if r.Method == http.MethodOptions {
 		h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-		h.Set("Access-Control-Allow-Headers", "*")
+		// The wildcard never covers Authorization, so allow what was asked for.
+		allow := r.Header.Get("Access-Control-Request-Headers")
+		if allow == "" {
+			allow = "*"
+		}
+		h.Set("Access-Control-Allow-Headers", allow)
 		h.Set("Access-Control-Max-Age", "600")
 		w.WriteHeader(http.StatusNoContent)
 		return

@@ -229,6 +229,9 @@ func (r *Registry) Field(f reflect.StructField) (*openapi.Schema, error) {
 	}
 
 	c := *s
+	if hasRule(rules, "required") {
+		c.Nullable = false // the validator rejects a nil pointer, so null never passes
+	}
 	if hasDoc {
 		c.Description = doc
 	}

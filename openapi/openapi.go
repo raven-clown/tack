@@ -201,7 +201,7 @@ func (s *Schema) UnmarshalJSON(b []byte) error {
 			}
 		}
 	}
-	if len(s.AnyOf) == 2 && s.AnyOf[0].Ref != "" && s.AnyOf[1].Type == "null" {
+	if len(s.AnyOf) == 2 && s.AnyOf[0] != nil && s.AnyOf[1] != nil && s.AnyOf[0].Ref != "" && s.AnyOf[1].Type == "null" {
 		s.Ref, s.AnyOf, s.Nullable = s.AnyOf[0].Ref, nil, true
 	}
 	if s.Nullable && len(s.Enum) > 0 && s.Enum[len(s.Enum)-1] == nil {

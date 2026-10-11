@@ -299,3 +299,17 @@ func TestDefine(t *testing.T) {
 		t.Fatalf("schemas = %d, want 1", len(r.Schemas()))
 	}
 }
+
+func TestRequiredPointerIsNotNullable(t *testing.T) {
+	r := NewRegistry()
+	s, err := r.Schema(reflect.TypeFor[struct {
+		Name *string `json:"name" validate:"required"`
+		Nick *string `json:"nick"`
+	}]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Properties["name"].Nullable || !s.Properties["nick"].Nullable || len(s.Required) != 1 || s.Required[0] != "name" {
+		t.Fatalf("name nullable %v, nick nullable %v, required %v", s.Properties["name"].Nullable, s.Properties["nick"].Nullable, s.Required)
+	}
+}

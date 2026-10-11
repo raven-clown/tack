@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,9 @@ func newOutput(t reflect.Type) (*output, error) {
 		o.stream = true
 		o.typ = reflect.Zero(t).Interface().(streamer).streamItem()
 		if o.typ.Implements(reflect.TypeFor[eventer]()) {
+			if !isEvent(o.typ) {
+				return nil, fmt.Errorf("stream item %s embeds or points to tack.Event; use tack.Event[T] itself as the item", o.typ)
+			}
 			o.typ = o.typ.Field(2).Type // Event.Data
 		}
 		return o, nil
@@ -91,12 +95,20 @@ func newOutput(t reflect.Type) (*output, error) {
 	return o, nil
 }
 
+// isEvent reports whether t is an instantiation of Event itself, not a type
+// that merely has its method through embedding or a pointer.
+func isEvent(t reflect.Type) bool {
+	return t.Kind() == reflect.Struct && t.PkgPath() == reflect.TypeFor[Event[int]]().PkgPath() && strings.HasPrefix(t.Name(), "Event[")
+}
+
 // wrapped reports whether Out has a Body field.
 func (o *output) wrapped() bool { return o.body != nil }
 
-// split returns the status, header values, and body of res.
+// split returns the status, header values, and body of res, a pointer to
+// the output struct. The body is returned by pointer so encoding it does not
+// copy it.
 func (o *output) split(res any, status int) (int, [][]string, any, error) {
-	v := reflect.ValueOf(res)
+	v := reflect.ValueOf(res).Elem()
 	if o.status != nil {
 		if s := int(v.FieldByIndex(o.status).Int()); s != 0 {
 			status = s
@@ -113,7 +125,7 @@ func (o *output) split(res any, status int) (int, [][]string, any, error) {
 			headers[i] = values
 		}
 	}
-	return status, headers, v.FieldByIndex(o.body).Interface(), nil
+	return status, headers, v.FieldByIndex(o.body).Addr().Interface(), nil
 }
 
 // formatter returns a function that turns a header field value into header
