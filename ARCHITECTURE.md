@@ -78,6 +78,12 @@ func Get[In, Out any](r Router, path string, h func(context.Context, In) (Out, e
 
 Type parameters are inferred from the handler, so users never write them explicitly.
 
+`Router` is sealed and implemented by `*App` and `*Group`. A group adds a path prefix, middleware, and route options (through `Group.With`) to every route registered on it, and groups nest. The full path, the middleware chain, and the options are resolved at registration by walking up to the app, so `Group.Use` after nesting still reaches routes registered later.
+
+### Middleware
+
+Middleware is plain `func(http.Handler) http.Handler` at three levels. `App.Use` wraps the whole mux, including the docs and unmatched routes; it is stored in an atomic pointer so `Use` after the server has started is safe. Group middleware and the `Middleware` route option wrap the route's handler at registration, so they run after `ServeMux` has matched the route and path values are available. The order is app, outer group, inner group, route, handler.
+
 ### Bind plan (`internal/bind`)
 
 At registration, the `In` type is analyzed once to produce a **plan**: a flat list of steps, one per field.
@@ -100,19 +106,32 @@ Validation is delegated to `go-playground/validator/v10`, wrapped so that:
 - locations are reported as `body.name`, `query.page`, `path.id`,
 - messages are human-readable.
 
+### Output plan
+
+The `Out` type is analyzed once as well. A struct with a field named `Body` is an output wrapper: `Body` is encoded as JSON, an untagged `int` field named `Status` overrides the status code when it is not zero, and `header`-tagged fields become response headers, each with a formatter chosen at registration (string, bool, numbers, `time.Time` as RFC 3339, `encoding.TextMarshaler`, and pointers or slices of those). Nil pointers, empty slices, and empty strings send no header. A struct without `Body` is the body itself, and registration panics if it has `header` fields or an untagged `int` `Status`, since that is almost always a forgotten `Body`.
+
 ### Errors
 
-All errors leaving tack are RFC 9457 `application/problem+json`.
+All errors leaving tack are RFC 9457 `application/problem+json` with a `code` member that names the kind of problem.
 
-| Situation | Status |
-| --- | --- |
-| Malformed input (bad JSON, wrong type) | 400 |
-| Body too large | 413 |
-| Validation failed | 422 |
-| `tack.NewError(status, detail)` from handler | that status |
-| Any other error from handler | 500 — details hidden from client, logged via `slog` |
+| Situation | Status | Code |
+| --- | --- | --- |
+| Malformed input (bad JSON, wrong type) | 400 | `malformed_request` |
+| Body too large | 413 | `body_too_large` |
+| Body with a non-JSON content type | 415 | `unsupported_media_type` |
+| Validation failed | 422 | `validation_failed` |
+| `tack.DefineError(status, code, detail)` from handler | that status | that code |
+| `tack.NewError(status, detail)` from handler | that status | none |
+| Error implementing `HTTPStatus() int` | that status | none |
+| Any other error from handler | 500, details hidden, logged via `slog` | `internal` |
 
-`Config.ErrorHandler` lets an app replace the error format globally (v0.3).
+Every error goes through one path: `problem` maps the handler's error to an `*Error` (keeping the original as its cause), 5xx errors are logged, and then either `Config.ErrorHandler` or the default problem+json writer sends it. `App.WriteError` exposes that path to middleware. With `Config.Dev`, a handler returning a typed error the route did not declare logs a warning.
+
+In the OpenAPI document each declared error code becomes a component named after it, such as `PetNotFoundProblem`: `allOf` of `ProblemDetails` and an object whose `code` is an enum with that one value. A response status lists its codes with `oneOf`. The code to status mapping is tracked per app so one code cannot be documented with two statuses.
+
+### Security
+
+`Config.Security` declares named schemes (`Bearer`, `Basic`, `APIKey`) that land in `components.securitySchemes`. The `Security` route or group option attaches a requirement to the operation and documents a 401 with code `unauthorized`. tack never checks credentials; middleware does, typically answering with `App.WriteError(w, r, tack.ErrUnauthorized)`.
 
 ### Schema registry (`internal/schema`)
 
@@ -129,7 +148,7 @@ Generates TypeScript **from the OpenAPI document**, not by reflecting on Go type
 ## Dependencies
 
 - **Core:** `github.com/go-playground/validator/v10` only. Adding any other core dependency requires maintainer approval.
-- **Tests:** test-only dependencies are fine (e.g. `kin-openapi` to validate generated specs, `goleak` for goroutine leaks).
+- **Tests:** test-only dependencies are fine (e.g. `kin-openapi` to validate generated specs, `chi` to prove stock middleware works, `goleak` for goroutine leaks).
 - **Benchmarks and examples** live in separate modules so their dependencies never reach users.
 
 ## Testing strategy

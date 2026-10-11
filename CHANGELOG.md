@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
+### Added
+
+- Route groups: `App.Group(prefix, mw...)`, nestable with `Group.Group`, plus `Group.Use` and `Group.With(opts...)` to share route options. A group prefix may hold wildcards such as `/orgs/{org}`.
+- Middleware at three levels with plain `func(http.Handler) http.Handler`: `App.Use`, group middleware, and the `Middleware` route option. Order: app, outer group, inner group, route, handler. chi's `RequestID`, `Logger`, and `Recoverer` work unchanged.
+- `ContextValue[T](ctx, key)` reads typed values middleware stored in the context.
+- Typed errors: `DefineError(status, code, detail)` returns an `*Error` with a `Code`; `Error.WithDetail` makes a per-request copy, `Error.Is` matches by code and status, and `Error.Unwrap` returns the handler's original error. The `Errors(...)` route option lists them in the OpenAPI document, one `<Code>Problem` schema per code, so clients can build a typed union per route. With `Config.Dev`, returning an undeclared typed error logs a warning.
+- `Config.ErrorHandler` replaces the error format for the whole app, and `App.WriteError` lets middleware answer in that format.
+- Security schemes: `Config.Security` with `Bearer`, `Basic`, and `APIKey`, bound to routes or groups with the `Security(name, scopes...)` option. They appear in `components.securitySchemes` and each operation's `security`, so `/docs` offers a token field and sends it. Secured routes document a 401 and `ErrUnauthorized` is the matching error.
+- Responses with headers: an output struct with a `Body` field, an optional `Status int`, and `header`-tagged fields. Headers are documented in the spec. Registration panics when a struct has `header` fields or an untagged `Status int` but no `Body`.
+- `openapi` gains `SecurityScheme`, `SecurityRequirement`, `Header`, `Components.SecuritySchemes`, `Operation.Security`, `Response.Headers`, and `Schema.AllOf`/`OneOf`.
+- `examples/auth`: a login that signs a JWT and a route that requires it, as its own module.
+
+### Changed
+
+- Every error tack sends now carries a `code`: `malformed_request` (400), `body_too_large` (413), `unsupported_media_type` (415), `validation_failed` (422), and `internal` (500). The `ProblemDetails` schema gains the optional `code` property.
+- An output struct with a field named `Body` is now treated as a response wrapper (D3), so only `Body` is encoded. Rename the field if it was meant as a JSON property.
+- `examples/petstore` uses a group, `DefineError`, and a `Location` header.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added
@@ -63,6 +83,7 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/raven-clown/tack/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/raven-clown/tack/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/raven-clown/tack/releases/tag/v0.1.0

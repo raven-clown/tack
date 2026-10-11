@@ -11,6 +11,8 @@ This file records the design decisions behind tack's public API: the options con
 | D3 | Status codes and response headers | `tack.Status(code)` route option; output struct with `Body`, `Status`, and `header` fields for dynamic cases | Decided |
 | D4 | Errors | `tack.NewError` returning `*tack.Error`, plus one interface for domain errors | Decided |
 | D5 | Tags and defaults | `path`, `query`, `header`, `cookie`, `default`; pointers mean optional | Decided |
+| D6 | Groups and middleware | `App.Group(prefix, mw...)` and `Group.With(opts...)`; plain `func(http.Handler) http.Handler` at app, group, and route level | Decided |
+| D7 | Typed errors | `DefineError(status, code, detail)` returns an `*Error` with a `code`; `Errors(...)` documents them per route, one schema per code | Decided |
 
 ## Prior art
 
@@ -206,6 +208,55 @@ In every option, unknown errors become a 500 with no details sent to the client 
 
 **Untagged exported fields** in an input struct panic at registration, naming the route, the field, and the fix ("add a `query`, `path`, `header`, or `cookie` tag, or name it `Body`"). Unexported fields and fields tagged `json:"-"` are ignored.
 
+## D6. Groups and middleware
+
+**A. Groups take middleware; options come through `With` (chosen)**
+
+```go
+v1 := app.Group("/v1", logging)
+admin := v1.Group("/admin", requireAdmin).With(tack.Security("bearer"))
+tack.Get(admin, "/users", listUsers, tack.Middleware(audit))
+```
+
+- Yes: a group is just a prefix, a middleware list, and a parent. `With` returns a child with no extra prefix, so nothing is copied and `Group.Use` on the parent still reaches it.
+- Yes: middleware stays `func(http.Handler) http.Handler` everywhere, so chi's `Logger`, `Recoverer`, and `RequestID` work unchanged (there is a test).
+- No: a route path of `"/"` under a prefix would silently become a `ServeMux` subtree match, so it panics; `"/{$}"` or `""` say what is meant.
+
+**B. Groups take route options, middleware through `Use` only (Fuego style)**
+
+- Yes: one variadic parameter.
+- No: `Use` after creating sub-groups is the common case for middleware, and mixing the two kinds of argument in one list reads badly.
+
+**C. chi-style `Route(prefix, func(r Router))` callbacks**
+
+- No: handlers register with generic package functions, so a callback adds nesting without adding anything.
+
+`App.Use` wraps the whole app, docs and 404s included, because logging and recovery are expected to see everything; group and route middleware wrap only matched routes, so they can read path values.
+
+## D7. Typed errors
+
+**A. `DefineError` returns an `*Error` with a code (chosen)**
+
+```go
+var ErrPetNotFound = tack.DefineError(404, "pet_not_found", "pet not found")
+
+return Pet{}, ErrPetNotFound.WithDetail(fmt.Sprintf("pet %d not found", id))
+```
+
+- Yes: no new type. The value is an error, `errors.Is` works on copies made with `WithDetail` because `Is` compares code and status, and `Errors(ErrPetNotFound)` documents it.
+- Yes: `code` is the discriminator the v0.4 TypeScript client needs, independent of the human-readable detail.
+- No: the variable is shared, so handlers must not mutate it (the same rule as any sentinel error).
+
+**B. A separate `ErrorDef` type with `New()`**
+
+- No: an extra exported type, and the definition would not itself be returnable.
+
+**C. Status-only declarations (`Errors(404, 409)`)**
+
+- No: two 404s with different meanings could not be told apart by a client.
+
+One schema per code (`PetNotFoundProblem` = `allOf` of `ProblemDetails` and `{code: enum [pet_not_found]}`) rather than an inline schema per response, so generators get a named type and a status with several codes is a `oneOf` of named types. The code is the identity: declaring the same code with a different status or default detail panics at registration.
+
 ## Decisions
 
 Decided on 2026-10-11. The options marked "chosen" above were accepted as written; the remaining questions were settled as follows.
@@ -227,6 +278,13 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Repeated header values (v0.2) | Slice headers accept repeated lines and comma-separated values | Matches the default OpenAPI header style |
 | Domain error detail (v0.2) | Only the message of the error that implements `HTTPStatus()` reaches the client | Wrapped context such as hostnames stays in logs |
 | Nil slices and maps (known limitation) | Encoded as `null` by encoding/json, while the schema says array or object | Return empty values from handlers; revisit when encoding/json/v2 encodes nil slices as `[]` |
+| Error codes on built-in errors (v0.3) | 400, 413, 415, 422, and 500 carry `malformed_request`, `body_too_large`, `unsupported_media_type`, `validation_failed`, and `internal` | One discriminator for every error a client can receive, not only the declared ones |
+| `ErrorHandler` input (v0.3) | The mapped `*Error`, with the original error reachable through `Unwrap` | Replacing the format should not mean reimplementing the status mapping and 5xx hiding |
+| 401 on secured routes (v0.3) | Documented automatically with `ErrUnauthorized`; middleware sends it with `App.WriteError` | A route that declares a scheme always has a 401; the exported value keeps docs and middleware in agreement |
+| Several `Security` options (v0.3) | Alternatives: any one scheme is enough | Matches the OpenAPI list semantics; combined requirements can come later without breaking this |
+| Output `Status` detection (v0.3) | Only an untagged `int` named `Status` next to `Body` is the status; a `Status` with a `json` tag or another type stays a JSON field | Health-style responses keep working, and a tag states intent |
+| Empty response headers (v0.3) | Nil pointers, empty slices, and empty strings are not sent and are optional in the spec | `Location: ` with no value is never wanted |
+| `time.Time` headers (v0.3) | RFC 3339 | Mirrors the input side; use a string field for HTTP-date headers such as `Last-Modified` |
 
 ## Prototype
 

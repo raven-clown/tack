@@ -62,7 +62,8 @@ That's it. You now have:
 - **Validation** with clear, field-level error messages
 - **Standard errors** in [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` format
 - **OpenAPI 3.1** at `/openapi.json` — always in sync with your code
-- **Interactive docs** at `/docs`
+- **Interactive docs** at `/docs`, including the auth schemes you declare
+- **Typed errors** declared per route and listed in the docs by code
 - **TypeScript client** generated from the same types *(v0.4)*
 
 ## Installation
@@ -105,6 +106,58 @@ Send a bad request and get every problem at once — not just the first one:
     { "location": "body.name", "message": "is required" },
     { "location": "path.id", "message": "must be at least 1" }
   ]
+}
+```
+
+### Errors your clients can switch on
+
+Define an error once, return it from handlers, and declare it on the routes that can produce it. It shows up in `/docs` under its status with a stable `code`, which the TypeScript client (v0.4) turns into a typed union:
+
+```go
+var ErrPetNotFound = tack.DefineError(http.StatusNotFound, "pet_not_found", "pet not found")
+
+tack.Get(app, "/pets/{id}", func(ctx context.Context, in GetPetInput) (Pet, error) {
+	return Pet{}, ErrPetNotFound.WithDetail(fmt.Sprintf("pet %d not found", in.ID))
+}, tack.Errors(ErrPetNotFound))
+```
+
+```json
+{ "type": "about:blank", "title": "Not Found", "status": 404, "code": "pet_not_found", "detail": "pet 7 not found" }
+```
+
+Every route also documents `validation_failed` (422) and `internal` (500). Replace the whole error format with `Config.ErrorHandler`.
+
+### Groups and middleware
+
+Groups share a path prefix, middleware, and options. Middleware is plain `func(http.Handler) http.Handler` at the app, group, and route level, so anything written for `net/http` or chi works as is:
+
+```go
+app.Use(middleware.RequestID, middleware.Logger)
+
+v1 := app.Group("/v1")
+admin := v1.Group("/admin", requireAdmin).With(tack.Security("bearer"))
+tack.Get(admin, "/users", listUsers, tack.Middleware(audit))
+```
+
+Middleware stores values in the request context; handlers read them back typed with `tack.ContextValue[User](ctx, userKey{})`.
+
+### Auth schemes in the docs
+
+Declare the schemes in `Config.Security` and bind them with `tack.Security`. `/docs` gets a token field and sends the credentials; your middleware checks them and answers with `app.WriteError(w, r, tack.ErrUnauthorized)`. See [examples/auth](examples/auth) for a JWT login.
+
+```go
+app := tack.New(tack.Config{Security: map[string]openapi.SecurityScheme{"bearer": tack.Bearer("JWT")}})
+```
+
+### Response headers and status
+
+An output struct with a `Body` field can set the status and headers, all documented in the spec:
+
+```go
+type CreatePetOutput struct {
+	Status   int
+	Location string `header:"Location"`
+	Body     Pet
 }
 ```
 
@@ -162,7 +215,7 @@ The public launch is planned for v0.5, once the parts that set tack apart are al
 | --- | --- | --- |
 | v0.1 | Core: typed handlers, binding, validation, errors | Done |
 | v0.2 | OpenAPI 3.1 + `/docs` | Done |
-| v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Planned |
+| v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Done |
 | v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Planned |
 | v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Planned |
 | v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Planned |
