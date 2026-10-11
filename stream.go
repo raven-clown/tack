@@ -75,6 +75,7 @@ func (s Stream[T]) serve(w http.ResponseWriter, r *http.Request, status int) err
 	rc := http.NewResponseController(w)
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
+	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "no-cache")
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(status)

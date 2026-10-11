@@ -173,7 +173,9 @@ func writeProblem(w http.ResponseWriter, e *Error) {
 	}
 	enc, err := encodeJSON(&p)
 	if err != nil {
-		w.Header()["Content-Type"] = problemContentType
+		h := w.Header()
+		h["Content-Type"] = problemContentType
+		h["X-Content-Type-Options"] = nosniff
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`))
 		return

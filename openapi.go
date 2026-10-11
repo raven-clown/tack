@@ -76,7 +76,10 @@ func (a *App) initOpenAPI(c Config) {
 		}
 		page := buf.Bytes()
 		a.mux.HandleFunc("GET "+docsPath, func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			h := w.Header()
+			h.Set("Content-Type", "text/html; charset=utf-8")
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("Referrer-Policy", "no-referrer")
 			_, _ = w.Write(page)
 		})
 	}
@@ -146,7 +149,9 @@ func (a *App) serveSpec(w http.ResponseWriter, r *http.Request) {
 	}
 	b := a.spec
 	a.mu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
+	h := w.Header()
+	h["Content-Type"] = jsonContentType
+	h["X-Content-Type-Options"] = nosniff
 	_, _ = w.Write(b)
 }
 
