@@ -23,18 +23,24 @@ export type ProblemDetails = z.infer<typeof ProblemDetails>;
 export const BodyTooLargeProblem = ProblemDetails.and(z.object({ code: z.literal("body_too_large") })).describe("request body too large");
 export type BodyTooLargeProblem = z.infer<typeof BodyTooLargeProblem>;
 
-export const InternalProblem = ProblemDetails.and(z.object({ code: z.literal("internal") })).describe("internal error");
-export type InternalProblem = z.infer<typeof InternalProblem>;
-
-export const MalformedRequestProblem = ProblemDetails.and(z.object({ code: z.literal("malformed_request") })).describe("malformed request");
-export type MalformedRequestProblem = z.infer<typeof MalformedRequestProblem>;
-
 export const Pet = z.object({
   id: z.number().int(),
   kind: z.enum(["cat", "dog", "bird"]),
   name: z.string().max(50),
 });
 export type Pet = z.infer<typeof Pet>;
+
+export const Change = z.object({
+  action: z.enum(["created", "updated", "deleted"]),
+  pet: Pet,
+});
+export type Change = z.infer<typeof Change>;
+
+export const InternalProblem = ProblemDetails.and(z.object({ code: z.literal("internal") })).describe("internal error");
+export type InternalProblem = z.infer<typeof InternalProblem>;
+
+export const MalformedRequestProblem = ProblemDetails.and(z.object({ code: z.literal("malformed_request") })).describe("malformed request");
+export type MalformedRequestProblem = z.infer<typeof MalformedRequestProblem>;
 
 export const PetInput = z.object({
   kind: z.enum(["cat", "dog", "bird"]),
@@ -45,7 +51,15 @@ export type PetInput = z.infer<typeof PetInput>;
 export const PetNotFoundProblem = ProblemDetails.and(z.object({ code: z.literal("pet_not_found") })).describe("pet not found");
 export type PetNotFoundProblem = z.infer<typeof PetNotFoundProblem>;
 
-export const UnsupportedMediaTypeProblem = ProblemDetails.and(z.object({ code: z.literal("unsupported_media_type") })).describe("content type is not JSON");
+export const Photo = z.object({
+  caption: z.string().optional(),
+  name: z.string(),
+  petId: z.number().int(),
+  size: z.number().int(),
+});
+export type Photo = z.infer<typeof Photo>;
+
+export const UnsupportedMediaTypeProblem = ProblemDetails.and(z.object({ code: z.literal("unsupported_media_type") })).describe("unsupported content type");
 export type UnsupportedMediaTypeProblem = z.infer<typeof UnsupportedMediaTypeProblem>;
 
 export const ValidationFailedProblem = ProblemDetails.and(z.object({ code: z.literal("validation_failed") })).describe("validation failed");
@@ -77,3 +91,9 @@ export const DeletePetsByIdInput = z.object({
   id: z.number().int().min(1),
 });
 export type DeletePetsByIdInput = z.infer<typeof DeletePetsByIdInput>;
+
+export const PostPetsByIdPhotoInput = z.object({
+  id: z.number().int().min(1),
+  body: z.object({ caption: z.string().max(100).optional(), photo: z.instanceof(Blob).describe("The image file") }),
+});
+export type PostPetsByIdPhotoInput = z.infer<typeof PostPetsByIdPhotoInput>;

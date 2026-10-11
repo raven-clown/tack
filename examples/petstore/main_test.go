@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -32,5 +35,45 @@ func TestPetstore(t *testing.T) {
 		if rec.Code != s.wantStatus || rec.Body.String() != s.wantBody {
 			t.Fatalf("%s %s: got %d %s\nwant %d %s", s.method, s.url, rec.Code, rec.Body, s.wantStatus, s.wantBody)
 		}
+	}
+
+	var form bytes.Buffer
+	w := multipart.NewWriter(&form)
+	_ = w.WriteField("caption", "sleeping")
+	part, _ := w.CreateFormFile("photo", "milo.jpg")
+	_, _ = part.Write([]byte("JPEG"))
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, "/pets/1/photo", &form)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if want := `{"petId":1,"name":"milo.jpg","size":4,"caption":"sleeping"}`; rec.Code != 201 || rec.Body.String() != want {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	app := newApp()
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+	res, err := srv.Client().Get(srv.URL + "/pets/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	// The listener is registered before the stream's headers are sent, so a
+	// change made now reaches it.
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/pets", strings.NewReader(`{"name":"Milo","kind":"cat"}`)))
+	if rec.Code != 201 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	buf := make([]byte, 256)
+	n, err := res.Body.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(buf[:n]); got != "event: created\ndata: {\"action\":\"created\",\"pet\":{\"id\":1,\"name\":\"Milo\",\"kind\":\"cat\"}}\n\n" {
+		t.Fatalf("event: %q", got)
 	}
 }
