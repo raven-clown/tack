@@ -82,10 +82,10 @@ func buildGenerated(t *testing.T, dir string) {
 	for _, args := range [][]string{{"mod", "tidy"}, {"vet", "./..."}, {"test", ".", "-update"}} {
 		cmd := exec.Command("go", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GOPROXY=off", "GOFLAGS=-mod=mod")
+		cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if os.Getenv("CI") == "" && strings.Contains(string(out), "GOPROXY=off") {
-				t.Logf("skipping the build of the generated project: a module is not in the cache\n%s", out)
+			if os.Getenv("CI") == "" && strings.Contains(string(out), "cannot find module") {
+				t.Logf("skipping the build of the generated project: a module could not be fetched\n%s", out)
 				return
 			}
 			t.Fatalf("go %s in the generated project: %v\n%s", strings.Join(args, " "), err, out)

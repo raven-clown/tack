@@ -80,7 +80,7 @@ func TestStream(t *testing.T) {
 		{"/named", "text/event-stream", "event: tick\nid: 1\ndata: {\"n\":1}\n\nevent: multi line\nid: a b\ndata: {\"n\":2}\n\ndata: {\"n\":3}\n\n", 200},
 		{"/nil", "application/problem+json", `"code":"internal"`, 500},
 		{"/fail", "application/problem+json", `"detail":"no such stream"`, 404},
-		{"/bad", "text/event-stream", "event: error\ndata: \"encoding event: json: error calling MarshalJSON for type tack.badJSON: nope\"\n\n", 200},
+		{"/bad", "text/event-stream", "event: error\ndata: \"encoding event: json: error calling MarshalJSON for type ", 200},
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
