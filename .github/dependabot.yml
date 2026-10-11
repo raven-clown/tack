@@ -14,6 +14,13 @@ updates:
     groups:
       go-dependencies:
         patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /bench
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
