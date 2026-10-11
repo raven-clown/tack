@@ -98,10 +98,8 @@ func run(b *testing.B, h http.Handler, method, url, body string) {
 	}
 }
 
-// TestAllocations holds the request path to its allocation budget on the
-// current Go. CI runs it in its own step without the race detector, which
-// allocates on its own, and not on the previous Go, whose encoding/json
-// allocates more.
+// TestAllocations holds the request path to its allocation budget. CI runs
+// it in its own step without the race detector, which allocates on its own.
 func TestAllocations(t *testing.T) {
 	if raceEnabled {
 		t.Skip("allocation counts are not meaningful under the race detector")
