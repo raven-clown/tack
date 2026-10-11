@@ -171,7 +171,7 @@ func FuzzPathParams(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, pattern string) {
 		for _, name := range PathParams(pattern) {
-			if name == "$" || !(strings.Contains(pattern, "{"+name+"}") || strings.Contains(pattern, "{"+name+"...}")) {
+			if name == "$" || (!strings.Contains(pattern, "{"+name+"}") && !strings.Contains(pattern, "{"+name+"...}")) {
 				t.Fatalf("PathParams(%q) returned %q", pattern, name)
 			}
 		}

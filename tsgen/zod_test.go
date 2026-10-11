@@ -26,7 +26,7 @@ func TestZodExpr(t *testing.T) {
 		{"email", &openapi.Schema{Type: "string", Format: "email"}, "z.string().email()"},
 		{"uuid", &openapi.Schema{Type: "string", Format: "uuid"}, "z.string().uuid()"},
 		{"uri", &openapi.Schema{Type: "string", Format: "uri"}, "z.string().url()"},
-		{"date-time", &openapi.Schema{Type: "string", Format: "date-time"}, "z.string().datetime()"},
+		{"date-time", &openapi.Schema{Type: "string", Format: "date-time"}, "z.string().datetime({ offset: true })"},
 		{"unknown format", &openapi.Schema{Type: "string", Format: "hostname"}, "z.string()"},
 		{"integer bounds", &openapi.Schema{Type: "integer", Minimum: f(1), Maximum: f(10)}, "z.number().int().min(1).max(10)"},
 		{"number exclusive", &openapi.Schema{Type: "number", ExclusiveMinimum: f(0.5), ExclusiveMaximum: f(2)}, "z.number().gt(0.5).lt(2)"},

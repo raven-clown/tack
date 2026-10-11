@@ -198,3 +198,40 @@ func TestExample(t *testing.T) {
 		t.Error("preferredCode should ignore invalid codes")
 	}
 }
+
+func TestPreflightEchoesRequestedHeaders(t *testing.T) {
+	h := goldenHandler(t)
+	req := httptest.NewRequest(http.MethodOptions, "/pets", nil)
+	req.Header.Set("Access-Control-Request-Headers", "authorization, content-type")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 204 || rec.Header().Get("Access-Control-Allow-Headers") != "authorization, content-type" {
+		t.Fatalf("got %d %v", rec.Code, rec.Header())
+	}
+}
+
+func TestHandlerRejectsPatternsServeMuxCannotTake(t *testing.T) {
+	doc := &openapi.Document{Paths: map[string]*openapi.PathItem{
+		"/files/{name}.json": {Get: &openapi.Operation{Responses: map[string]*openapi.Response{"200": {}}}},
+	}}
+	if _, err := Handler(doc); err == nil || !strings.Contains(err.Error(), "GET /files/{name}.json") || !strings.Contains(err.Error(), "whole segments") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestExampleBoundsAreClamped(t *testing.T) {
+	neg, huge := -1, 1<<30
+	m := &mock{}
+	if v := m.example(&openapi.Schema{Type: "string", MaxLength: &neg}, "", 0); v != "" {
+		t.Errorf("negative maxLength: %q", v)
+	}
+	if v := m.example(&openapi.Schema{Type: "string", MinLength: &huge}, "", 0).(string); len(v) > 2*maxExampleSize {
+		t.Errorf("huge minLength: %d bytes", len(v))
+	}
+	if v := m.example(&openapi.Schema{Type: "array", Items: &openapi.Schema{Type: "integer"}, MinItems: &huge}, "", 0).([]any); len(v) != maxExampleSize {
+		t.Errorf("huge minItems: %d items", len(v))
+	}
+	if v := m.example(&openapi.Schema{Type: "array", Items: &openapi.Schema{Type: "integer"}, MaxItems: &neg}, "", 0).([]any); len(v) != 0 {
+		t.Errorf("negative maxItems: %d items", len(v))
+	}
+}

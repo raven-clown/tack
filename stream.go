@@ -69,6 +69,9 @@ func (s Stream[T]) serve(w http.ResponseWriter, r *http.Request, status int) err
 	if s == nil {
 		return fmt.Errorf("the handler returned a nil Stream; return an empty iterator or an error")
 	}
+	if !canFlush(w) {
+		return fmt.Errorf("the ResponseWriter cannot flush, so events would never leave the server; give the middleware that wraps it an Unwrap() http.ResponseWriter method")
+	}
 	rc := http.NewResponseController(w)
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
@@ -115,6 +118,20 @@ func (s Stream[T]) serve(w http.ResponseWriter, r *http.Request, status int) err
 		return rc.Flush() == nil
 	})
 	return nil
+}
+
+// canFlush reports whether w, or a writer it unwraps to, is an http.Flusher.
+func canFlush(w http.ResponseWriter) bool {
+	for {
+		if _, ok := w.(http.Flusher); ok {
+			return true
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return false
+		}
+		w = u.Unwrap()
+	}
 }
 
 // sanitizeLine keeps a field value on one line.

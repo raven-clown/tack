@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 type baseKey struct{}
@@ -39,6 +41,8 @@ func waitForServer(t *testing.T, url string) {
 }
 
 func TestRunShutsDownStreams(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	defer http.DefaultClient.CloseIdleConnections()
 	app := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	Get(app, "/wait", func(ctx context.Context, _ struct{}) (Stream[int], error) {
 		return func(yield func(int) bool) {
@@ -103,6 +107,7 @@ func TestRunShutsDownStreams(t *testing.T) {
 }
 
 func TestRunErrors(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	app := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err := app.Run(context.Background(), "256.0.0.1:0"); err == nil {
 		t.Error("want an error for an invalid address")

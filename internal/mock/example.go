@@ -61,10 +61,10 @@ func (m *mock) example(s *openapi.Schema, hint string, depth int) any {
 	case "array":
 		n := 1
 		if s.MinItems != nil && *s.MinItems > n {
-			n = *s.MinItems
+			n = min(*s.MinItems, maxExampleSize)
 		}
 		if s.MaxItems != nil && *s.MaxItems < n {
-			n = *s.MaxItems
+			n = max(*s.MaxItems, 0)
 		}
 		if depth > maxDepth {
 			n = 0
@@ -94,6 +94,9 @@ func (m *mock) example(s *openapi.Schema, hint string, depth int) any {
 	return nil
 }
 
+// maxExampleSize caps what a document can make the mock allocate.
+const maxExampleSize = 1 << 10
+
 func exampleString(s *openapi.Schema, hint string) string {
 	var v string
 	switch {
@@ -115,12 +118,12 @@ func exampleString(s *openapi.Schema, hint string) string {
 		v = "string"
 	}
 	if s.MinLength != nil {
-		for len(v) < *s.MinLength {
+		for len(v) < min(*s.MinLength, maxExampleSize) {
 			v += v
 		}
 	}
 	if s.MaxLength != nil && len(v) > *s.MaxLength {
-		v = v[:*s.MaxLength]
+		v = v[:max(*s.MaxLength, 0)]
 	}
 	return v
 }

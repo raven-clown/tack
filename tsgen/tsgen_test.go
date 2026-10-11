@@ -271,6 +271,7 @@ func TestGenerateErrors(t *testing.T) {
 		{"invalid id", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{OperationID: "get-a", Responses: ok}}}, nil, nil, "not a TypeScript identifier"},
 		{"member id", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{OperationID: "send", Responses: ok}}}, nil, nil, "member of the generated Client"},
 		{"reserved schema", map[string]*openapi.PathItem{}, map[string]*openapi.Schema{"Client": {Type: "string"}}, nil, `schema "Client" needs the TypeScript name Client, which the generated client already uses`},
+		{"global schema", map[string]*openapi.PathItem{}, map[string]*openapi.Schema{"Response": {Type: "string"}}, nil, `schema "Response" needs the TypeScript name Response, which the generated client already uses`},
 		{"schema vs operation", map[string]*openapi.PathItem{"/pets": {Get: &openapi.Operation{Responses: ok}}}, map[string]*openapi.Schema{"GetPetsError": {Type: "string"}}, nil,
 			`operation getPets needs the TypeScript name GetPetsError, which schema "GetPetsError" already uses`},
 		{"schema name clash", map[string]*openapi.PathItem{}, map[string]*openapi.Schema{"A-B": {Type: "string"}, "AB": {Type: "string"}}, nil, "needs the TypeScript name AB"},

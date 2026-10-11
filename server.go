@@ -61,6 +61,9 @@ func (a *App) Serve(ctx context.Context, srv *http.Server) error {
 	go func() { served <- srv.Serve(ln) }()
 	select {
 	case err := <-served:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil // the caller shut the server down itself
+		}
 		return err
 	case <-ctx.Done():
 	}

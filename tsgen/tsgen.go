@@ -69,7 +69,7 @@ func check(path string, generate func() ([]byte, error), how string) error {
 	if err != nil {
 		return err
 	}
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec G304 -- the caller's own generated file
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%w: %s does not exist; generate it with %s", ErrStale, path, how)
@@ -94,12 +94,16 @@ func firstDiff(a, b []byte) int {
 	return min(len(al), len(bl)) + 1
 }
 
-// reserved are the identifiers the generated runtime defines. A schema or
-// operation that needs one of them fails generation.
+// reserved are the identifiers the generated runtime defines, and the
+// globals it relies on, which a type declared in the file would shadow. A
+// schema or operation that needs one of them fails generation.
 var reserved = []string{
 	"Client", "ClientOptions", "RequestOptions", "Credential", "SecurityName",
 	"Result", "Ok", "Err", "ApiError", "unwrap", "Op", "HeaderKind", "ServerEvent",
 	"securitySchemes", "appendQuery", "readHeaders", "problemMessage", "isJSON", "events", "formBody",
+	"Array", "AsyncIterable", "Blob", "BodyInit", "Error", "FormData", "Headers", "HeadersInit", "JSON",
+	"Number", "Object", "Omit", "Partial", "Promise", "Record", "RegExp", "RequestInit", "Response",
+	"String", "TextDecoder", "URLSearchParams", "fetch",
 }
 
 // reservedMembers are the members of Client an operation ID may not shadow.

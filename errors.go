@@ -1,7 +1,6 @@
 package tack
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -161,6 +160,9 @@ func (a *App) respond(w http.ResponseWriter, r *http.Request, e *Error) {
 
 func validStatus(s int) bool { return s >= 400 && s <= 599 }
 
+// problemContentType is shared like jsonContentType.
+var problemContentType = []string{"application/problem+json"}
+
 func writeProblem(w http.ResponseWriter, e *Error) {
 	p := *e
 	if p.Type == "" {
@@ -169,12 +171,12 @@ func writeProblem(w http.ResponseWriter, e *Error) {
 	if p.Title == "" {
 		p.Title = http.StatusText(p.Status)
 	}
-	b, err := json.Marshal(p)
+	enc, err := encodeJSON(&p)
 	if err != nil {
-		b = []byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`)
-		p.Status = http.StatusInternalServerError
+		w.Header()["Content-Type"] = problemContentType
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal"}`))
+		return
 	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(p.Status)
-	_, _ = w.Write(b)
+	enc.sendAs(w, p.Status, problemContentType)
 }

@@ -10,7 +10,7 @@ export const Owner = z.object({
 export type Owner = z.infer<typeof Owner>;
 
 export const Animal = z.object({
-  born: z.string().datetime(),
+  born: z.string().datetime({ offset: true }),
   id: z.number().int().describe("Pet ID"),
   kind: z.enum(["cat", "dog"]),
   name: z.string().max(50),

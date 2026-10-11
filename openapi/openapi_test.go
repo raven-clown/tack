@@ -61,3 +61,13 @@ func TestSchemaRoundTrip(t *testing.T) {
 		t.Error("want error for non-object schema")
 	}
 }
+
+func TestSchemaUnmarshalNilAnyOf(t *testing.T) {
+	var s Schema
+	if err := json.Unmarshal([]byte(`{"anyOf":[null,{"type":"null"}]}`), &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Nullable || len(s.AnyOf) != 2 {
+		t.Fatalf("got %+v", s)
+	}
+}

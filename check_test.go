@@ -27,6 +27,9 @@ type checkedInput struct {
 	Token   string   `header:"X-Token" validate:"required"`
 	Flag    bool     `query:"flag" validate:"required"`
 	Score   *float64 `query:"score" validate:"min=2"`
+	Must    *int     `query:"must" validate:"required"`
+	Narrow  float32  `query:"narrow" validate:"omitempty,max=0.1"`
+	Padded  int      `query:"padded" validate:"omitempty,oneof=01 2"`
 	Nothing string   `query:"nothing"`
 }
 
@@ -40,21 +43,25 @@ func TestChecksMatchValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checks, ok := compileChecks(plan)
-	if !ok || len(checks) != 13 {
-		t.Fatalf("compileChecks: ok %v, %d checks", ok, len(checks))
+	checks, ok := bind.Compile(plan, typ)
+	if !ok || len(checks) != 16 {
+		t.Fatalf("bind.Compile: ok %v, %d checks", ok, len(checks))
 	}
-	one, two, half, low := 1, 2, 0.5, 1.5
+	one, two, half, low, zero := 1, 2, 0.5, 1.5, 0
 	inputs := []checkedInput{
-		{ID: 1, Limit: 10, Ratio: 0.5, Count: 4, Code: 2, Name: "milo", Tag: "ab", Token: "t", Flag: true},
+		{ID: 1, Limit: 10, Ratio: 0.5, Count: 4, Code: 2, Name: "milo", Tag: "ab", Token: "t", Flag: true, Must: &one},
 		{},
+		// Pointers to zero values count as present; float32 bounds and
+		// padded oneof options follow the validator.
+		{Page: &zero, Must: &zero, Narrow: 0.1, Padded: 1},
+		{Page: &zero, Must: &zero, Narrow: 0.2, Padded: 2},
 		{ID: 0, Limit: 101, Page: &one, Ratio: 1.5, Count: 3, Code: 9, Kind: "fish", Name: "toolong", Tag: "abc", Exact: "no", Token: "", Flag: false, Score: &low},
 		{ID: 1, Limit: 1, Page: &two, Ratio: 1, Count: 4, Code: 3, Kind: "cat", Name: "é", Tag: "éé", Exact: "yes", Token: "t", Flag: true, Score: &half},
 		{ID: 5, Limit: 50, Ratio: 0.1, Count: 4, Code: 1, Name: "x", Tag: "xy", Token: "t", Flag: true, Kind: "dog"},
 	}
 	for i, in := range inputs {
 		in := in
-		got := runChecks(reflect.ValueOf(&in), checks)
+		got := detailsOf(bind.Run(reflect.ValueOf(&in), checks))
 		want := app.validateInput(&in, "checkedInput.", plan.Locations())
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("input %d:\ncompiled:  %+v\nvalidator: %+v", i, got, want)
@@ -101,6 +108,20 @@ func TestCompileChecksFallsBack(t *testing.T) {
 		{"string gt", reflect.TypeFor[struct {
 			A string `query:"a" validate:"gt=1"`
 		}](), false, 0},
+		{"rule on the body field", reflect.TypeFor[struct {
+			A    string `query:"a" validate:"required"`
+			Body []int  `validate:"min=1"`
+		}](), false, 0},
+		{"rule on an ignored field", reflect.TypeFor[struct {
+			A string `query:"a" validate:"required"`
+			B string `json:"-" validate:"required"`
+		}](), false, 0},
+		{"omitempty after a rule", reflect.TypeFor[struct {
+			A int `query:"a" validate:"min=1,omitempty"`
+		}](), false, 0},
+		{"int bound that is not an int", reflect.TypeFor[struct {
+			A int `query:"a" validate:"min=1.5"`
+		}](), false, 0},
 		{"required file", reflect.TypeFor[struct {
 			F *multipart.FileHeader `form:"f" validate:"required"`
 		}](), true, 1},
@@ -118,7 +139,7 @@ func TestCompileChecksFallsBack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			checks, ok := compileChecks(plan)
+			checks, ok := bind.Compile(plan, tt.typ)
 			if ok != tt.ok || len(checks) != tt.n {
 				t.Fatalf("ok %v with %d checks, want %v with %d", ok, len(checks), tt.ok, tt.n)
 			}

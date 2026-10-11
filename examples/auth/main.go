@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -133,11 +132,10 @@ func main() {
 		secret = make([]byte, 32)
 		_, _ = rand.Read(secret)
 	}
+	// AUTH_PASSWORD sets ada's password; the default is for trying the demo.
 	password := os.Getenv("AUTH_PASSWORD")
 	if password == "" {
-		b := make([]byte, 8)
-		_, _ = rand.Read(b)
-		password = hex.EncodeToString(b)
+		password = "hunter2"
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -157,6 +155,6 @@ func main() {
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	log.Printf("listening on %s; log in as ada with password %s", srv.Addr, password)
+	log.Printf("listening on %s; log in as ada with the password from AUTH_PASSWORD (default hunter2)", srv.Addr)
 	log.Fatal(srv.ListenAndServe())
 }
