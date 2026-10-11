@@ -51,7 +51,7 @@ register http.HandlerFunc on ServeMux                 ▼
                     Group, route options, errors, context helpers
 /internal/bind      Builds and executes bind plans (request → struct)
 /internal/schema    Converts Go types to JSON Schema 2020-12 + schema registry
-/openapi            Assembles and serves the OpenAPI 3.1 document and /docs
+/openapi            OpenAPI 3.1 document types
 /tsgen              Generates TypeScript from the OpenAPI document (v0.4)
 /cmd/tack           CLI: new, gen ts, spec (v0.5)
 /examples           Runnable example projects (each its own module if it has extra deps)
@@ -110,11 +110,11 @@ All errors leaving tack are RFC 9457 `application/problem+json`.
 
 ### Schema registry (`internal/schema`)
 
-Converts `reflect.Type` to JSON Schema 2020-12. Named types are stored once in a registry and referenced by `$ref`, which also handles recursive types. Name collisions across packages are resolved by prefixing the package name. Struct tags (`json`, `validate`, `doc`, `example`) map onto schema keywords such as `minimum`, `maxLength`, `enum`, `format`, and `description`. Types can override their schema by implementing a provider interface.
+Converts `reflect.Type` to JSON Schema 2020-12. Named types are stored once in a registry and referenced by `$ref`, which also handles recursive types. Name collisions across packages are resolved by prefixing the package name. Struct tags (`json`, `validate`, `doc`, `example`) map onto schema keywords such as `minimum`, `maxLength`, `enum`, `format`, and `description`. Types can override their schema by implementing `openapi.SchemaProvider`. An object property is required when encoding/json always writes it (no `omitempty` or `omitzero`, not a pointer) or when it has `validate:"required"`.
 
 ### OpenAPI (`openapi`)
 
-The document is assembled from operation metadata recorded at registration and the schema registry. It is built once (lazily on first request to the spec path, or when `app.OpenAPI()` is called) and cached. `/docs` serves a small HTML page that loads Scalar from a CDN.
+The `openapi` package only defines the document types. Each route adds its operation to the app's document at registration, converting its types through the schema registry, so unsupported types panic at startup rather than on the first spec request. The spec is encoded to JSON once and cached; registering another route or calling `app.OpenAPI()` clears the cache. `/docs` serves a small HTML page that loads a pinned Scalar version from a CDN, with its hosted extras (assistant, MCP, developer tools, external client, telemetry) turned off.
 
 ### TypeScript generation (`tsgen`, v0.4)
 

@@ -78,7 +78,7 @@ func TestBindAllSources(t *testing.T) {
 	}
 
 	locs := p.Locations()
-	for k, v := range map[string]string{"ID": "path.id", "Paging.Page": "query.page", "Trace": "header.X-Trace-Id", "Body": "body", "Session": "cookie.session"} {
+	for k, v := range map[string]string{"ID": "path.id", "Paging.Page": "query.page", "Trace": "header.x-trace-id", "Body": "body", "Session": "cookie.session"} {
 		if locs[k] != v {
 			t.Errorf("Locations()[%q] = %q, want %q", k, locs[k], v)
 		}

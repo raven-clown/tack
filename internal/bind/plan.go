@@ -47,15 +47,18 @@ type Error struct {
 func (e *Error) Error() string { return e.Detail }
 
 type step struct {
-	src   source
-	name  string
-	index []int
-	set   setter
-	slice bool
-	def   *reflect.Value
+	src     source
+	field   reflect.StructField
+	name    string
+	display string
+	index   []int
+	set     setter
+	slice   bool
+	def     *reflect.Value
 }
 
 type body struct {
+	field    reflect.StructField
 	index    []int
 	typ      reflect.Type
 	optional bool
@@ -127,7 +130,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 		}
 		if n == 0 {
 			if f.Name == "Body" && goPrefix == "" {
-				p.body = &body{index: idx, typ: f.Type, optional: f.Type.Kind() == reflect.Pointer}
+				p.body = &body{field: f, index: idx, typ: f.Type, optional: f.Type.Kind() == reflect.Pointer}
 				p.locations[goPath] = "body"
 				continue
 			}
@@ -140,6 +143,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 		if name == "" || name == "-" {
 			return fmt.Errorf("field %s: %s tag needs a name, e.g. %s:\"id\"", goPath, sources[src].tag, sources[src].tag)
 		}
+		display := name
 		if src == srcHeader {
 			name = textproto.CanonicalMIMEHeaderKey(name)
 		}
@@ -162,7 +166,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			return fmt.Errorf("field %s: %w; use a string, bool, number, time.Time, or a type implementing encoding.TextUnmarshaler", goPath, err)
 		}
 
-		s := step{src: src, name: name, index: idx, set: set, slice: isSlice}
+		s := step{src: src, field: f, name: name, display: display, index: idx, set: set, slice: isSlice}
 		if d, ok := f.Tag.Lookup("default"); ok {
 			if isSlice {
 				return fmt.Errorf("field %s: default is not supported on slices; remove the default tag", goPath)
@@ -177,7 +181,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			p.hasQuery = true
 		}
 		p.steps = append(p.steps, s)
-		p.locations[goPath] = sources[src].prefix + "." + name
+		p.locations[goPath] = sources[src].prefix + "." + display
 	}
 	return nil
 }
@@ -199,6 +203,30 @@ func sourceTag(f reflect.StructField) (source, string, int) {
 
 // HasBody reports whether the input reads a JSON body.
 func (p *Plan) HasBody() bool { return p.body != nil }
+
+// Param describes one bound request value.
+type Param struct {
+	In    string
+	Name  string
+	Field reflect.StructField
+}
+
+// Params returns the plan's non-body values in field order.
+func (p *Plan) Params() []Param {
+	params := make([]Param, len(p.steps))
+	for i, s := range p.steps {
+		params[i] = Param{In: sources[s.src].tag, Name: s.display, Field: s.field}
+	}
+	return params
+}
+
+// Body returns the Body field and whether the body is required.
+func (p *Plan) Body() (f reflect.StructField, required, ok bool) {
+	if p.body == nil {
+		return reflect.StructField{}, false, false
+	}
+	return p.body.field, !p.body.optional, true
+}
 
 // Locations maps Go field paths (e.g. "Body", "Filter.Page") to request locations
 // (e.g. "body", "query.page").
@@ -227,7 +255,7 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 				continue
 			}
 			fv := v.FieldByIndex(s.index)
-			loc := sources[s.src].prefix + "." + s.name
+			loc := sources[s.src].prefix + "." + s.display
 			if !s.slice {
 				if err := s.set(fv, values[0]); err != nil {
 					fields = append(fields, FieldError{loc, err.Error()})

@@ -1,0 +1,323 @@
+{
+  "components": {
+    "BPet": {
+      "type": "object",
+      "properties": {
+        "legs": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "legs"
+      ]
+    },
+    "Kitchen": {
+      "type": "object",
+      "properties": {
+        "NoTag": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean",
+          "examples": [
+            true
+          ]
+        },
+        "addr": {
+          "type": "string"
+        },
+        "age": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "exclusiveMaximum": 30
+        },
+        "anotherId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "any": {},
+        "big": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "blob": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "byId": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "code": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32",
+          "default": 3
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "custom": {},
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "exact": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "few": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "grid": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Unique ID",
+          "examples": [
+            42
+          ]
+        },
+        "inline": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "required": [
+            "x"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cat",
+            "dog"
+          ]
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "level": {
+          "type": "integer",
+          "format": "int64",
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "nick": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "other": {
+          "$ref": "#/components/schemas/BPet"
+        },
+        "parent": {
+          "description": "Optional parent",
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/Node"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "pets": {
+          "$ref": "#/components/schemas/PagePet"
+        },
+        "positive": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "ratio": {
+          "type": "number",
+          "format": "float"
+        },
+        "raw": {},
+        "score": {
+          "type": "number",
+          "format": "double",
+          "maximum": 1,
+          "exclusiveMinimum": 0
+        },
+        "short": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 9
+        },
+        "site": {
+          "type": "string",
+          "format": "uri"
+        },
+        "status": {
+          "$ref": "#/components/schemas/Status"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2
+          },
+          "maxItems": 5
+        },
+        "token": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "tree": {
+          "$ref": "#/components/schemas/Node"
+        },
+        "unsigned": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "zero": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "id",
+        "createdAt",
+        "name",
+        "age",
+        "score",
+        "ratio",
+        "count",
+        "big",
+        "unsigned",
+        "active",
+        "kind",
+        "level",
+        "tags",
+        "grid",
+        "addr",
+        "custom",
+        "status",
+        "tree",
+        "pets",
+        "other",
+        "inline",
+        "code",
+        "exact",
+        "NoTag",
+        "short",
+        "few",
+        "positive",
+        "pattern",
+        "anotherId"
+      ]
+    },
+    "Node": {
+      "type": "object",
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Node"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "value"
+      ]
+    },
+    "PagePet": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Pet"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "items",
+        "total"
+      ]
+    },
+    "Pet": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "Status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "archived"
+      ]
+    }
+  },
+  "root": {
+    "$ref": "#/components/schemas/Kitchen"
+  }
+}

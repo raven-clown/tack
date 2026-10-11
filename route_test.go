@@ -90,7 +90,7 @@ func newTestApp(t *testing.T, logs *bytes.Buffer) *App {
 	Delete(app, "/pets/{id}", func(context.Context, getPetInput) (struct{}, error) {
 		return struct{}{}, nil
 	}, Status(http.StatusNoContent))
-	Get(app, "/bad-output", func(context.Context, struct{}) (func(), error) {
+	Get(app, "/bad-output", func(context.Context, struct{}) (any, error) {
 		return func() {}, nil
 	})
 	return app
@@ -179,6 +179,7 @@ func TestRegistrationPanics(t *testing.T) {
 		ID int `path:"id"`
 	}
 	h := func(context.Context, idInput) (struct{}, error) { return struct{}{}, nil }
+	h2 := func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil }
 	tests := []struct {
 		name     string
 		register func(a *App)
@@ -196,6 +197,13 @@ func TestRegistrationPanics(t *testing.T) {
 		{"bad status", func(a *App) {
 			Get(a, "/pets/{id}", h, Status(404))
 		}, "tack: GET /pets/{id}: Status(404) must be a 2xx or 3xx code"},
+		{"unsupported output", func(a *App) {
+			Get(a, "/f", func(context.Context, struct{}) (func(), error) { return nil, nil })
+		}, "tack: GET /f: output type func(): type func() is not supported"},
+		{"duplicate operation ID", func(a *App) {
+			Get(a, "/a", h2, OperationID("same"))
+			Get(a, "/b", h2, OperationID("same"))
+		}, `tack: GET /b: operation ID "same" is already used by GET /a`},
 		{"nil handler", func(a *App) {
 			Get[idInput, struct{}](a, "/pets/{id}", nil)
 		}, "tack: GET /pets/{id}: handler is nil"},

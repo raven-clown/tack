@@ -215,6 +215,11 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Unknown JSON fields in the body | Ignored, as `encoding/json` does | Clients can roll out new fields before servers, and this matches what Go developers expect |
 | Missing required header or cookie | 422, like any other validation failure | One rule for every source; 400 stays reserved for malformed input |
 | Lead selling point | API docs that never drift from the code | Available from v0.2; the TypeScript client (v0.4) builds on the same promise |
+| Required object properties (v0.2) | Required when encoding/json always writes the field (no `omitempty`/`omitzero`, not a pointer), or when it has `validate:"required"` | Response schemas match real output, so generated clients get non-optional fields |
+| Pointer parameters (v0.2) | Optional, never `null` in the schema | Query, header, and cookie values are absent or present; they can't be null |
+| Turning off spec or docs (v0.2) | `SpecPath` or `DocsPath` set to `"-"` | An empty string keeps the useful default |
+| When the spec is built (v0.2) | At route registration, then encoded once and cached | Unsupported types fail at startup, not on the first spec request |
+| Docs page (v0.2) | Scalar at a pinned version, with its hosted extras turned off | A predictable page with no third-party features beyond rendering the spec |
 
 ## Prototype
 

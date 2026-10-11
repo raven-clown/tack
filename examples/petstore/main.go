@@ -32,12 +32,12 @@ type store struct {
 }
 
 type listInput struct {
-	Kind  string `query:"kind" validate:"omitempty,oneof=cat dog bird"`
-	Limit int    `query:"limit" default:"20" validate:"min=1,max=100"`
+	Kind  string `query:"kind" validate:"omitempty,oneof=cat dog bird" doc:"Only return pets of this kind"`
+	Limit int    `query:"limit" default:"20" validate:"min=1,max=100" doc:"Maximum number of pets"`
 }
 
 type idInput struct {
-	ID int `path:"id" validate:"min=1"`
+	ID int `path:"id" validate:"min=1" doc:"Pet ID"`
 }
 
 type createInput struct {
@@ -107,12 +107,13 @@ func (s *store) delete(_ context.Context, in idInput) (struct{}, error) {
 
 func newApp() *tack.App {
 	s := &store{pets: map[int]Pet{}}
-	app := tack.New(tack.Config{Title: "Pet Store", Version: "1.0.0"})
-	tack.Get(app, "/pets", s.list)
-	tack.Get(app, "/pets/{id}", s.get)
-	tack.Post(app, "/pets", s.create, tack.Status(http.StatusCreated))
-	tack.Put(app, "/pets/{id}", s.update)
-	tack.Delete(app, "/pets/{id}", s.delete, tack.Status(http.StatusNoContent))
+	app := tack.New(tack.Config{Title: "Pet Store", Version: "1.0.0", Description: "A small CRUD API built with tack."})
+	pets := tack.Tags("pets")
+	tack.Get(app, "/pets", s.list, tack.Summary("List pets"), pets)
+	tack.Get(app, "/pets/{id}", s.get, tack.Summary("Get a pet"), pets)
+	tack.Post(app, "/pets", s.create, tack.Summary("Create a pet"), tack.Status(http.StatusCreated), pets)
+	tack.Put(app, "/pets/{id}", s.update, tack.Summary("Update a pet"), pets)
+	tack.Delete(app, "/pets/{id}", s.delete, tack.Summary("Delete a pet"), tack.Status(http.StatusNoContent), pets)
 	return app
 }
 

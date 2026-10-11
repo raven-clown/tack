@@ -15,12 +15,42 @@ import (
 type RouteOption func(*routeConfig)
 
 type routeConfig struct {
-	status int
+	status      int
+	summary     string
+	description string
+	tags        []string
+	operationID string
+	deprecated  bool
 }
 
 // Status sets the status code of successful responses. The default is 200.
 func Status(code int) RouteOption {
 	return func(c *routeConfig) { c.status = code }
+}
+
+// Summary sets the operation summary in the OpenAPI document.
+func Summary(s string) RouteOption {
+	return func(c *routeConfig) { c.summary = s }
+}
+
+// Description sets the operation description in the OpenAPI document.
+func Description(s string) RouteOption {
+	return func(c *routeConfig) { c.description = s }
+}
+
+// Tags groups the operation under tags in the OpenAPI document.
+func Tags(tags ...string) RouteOption {
+	return func(c *routeConfig) { c.tags = append(c.tags, tags...) }
+}
+
+// OperationID overrides the generated operation ID, such as "getPetsById".
+func OperationID(id string) RouteOption {
+	return func(c *routeConfig) { c.operationID = id }
+}
+
+// Deprecated marks the operation as deprecated in the OpenAPI document.
+func Deprecated() RouteOption {
+	return func(c *routeConfig) { c.deprecated = true }
 }
 
 // Get registers h for GET requests to path. In and Out are inferred from h.
@@ -70,6 +100,9 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 	t := reflect.TypeFor[In]()
 	plan, err := bind.New(t, bind.PathParams(path))
 	if err != nil {
+		panic(fmt.Sprintf("tack: %s: %v", route, err))
+	}
+	if err := a.addOperation(method, path, plan, reflect.TypeFor[Out](), cfg); err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", route, err))
 	}
 	check := hasValidateTags(t, map[reflect.Type]bool{})

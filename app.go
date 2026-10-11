@@ -3,17 +3,31 @@ package tack
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/raven-clown/tack/internal/schema"
+	"github.com/raven-clown/tack/openapi"
 )
 
 const defaultMaxBodyBytes = 1 << 20
 
 // Config configures an App.
 type Config struct {
-	// Title and Version describe the API.
-	Title   string
-	Version string
+	// Title, Version, and Description describe the API in the OpenAPI
+	// document. Title defaults to "API" and Version to "0.0.0".
+	Title       string
+	Version     string
+	Description string
+
+	// Servers lists the base URLs the API is served from.
+	Servers []openapi.Server
+
+	// SpecPath and DocsPath serve the OpenAPI document and the docs page.
+	// They default to "/openapi.json" and "/docs"; "-" disables them.
+	SpecPath string
+	DocsPath string
 
 	// MaxBodyBytes limits request bodies. Zero or less means 1 MiB.
 	MaxBodyBytes int64
@@ -28,6 +42,12 @@ type App struct {
 	maxBody  int64
 	logger   *slog.Logger
 	validate *validator.Validate
+
+	mu       sync.Mutex
+	registry *schema.Registry
+	doc      *openapi.Document
+	spec     []byte
+	opIDs    map[string]string
 }
 
 // New returns an App configured by c.
@@ -44,6 +64,7 @@ func New(c Config) *App {
 	if a.logger == nil {
 		a.logger = slog.Default()
 	}
+	a.initOpenAPI(c)
 	return a
 }
 
