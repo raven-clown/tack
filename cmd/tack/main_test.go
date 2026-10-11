@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,7 +16,7 @@ const golden = "../../testdata/openapi.golden.json"
 func runCLI(t *testing.T, stdin string, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code = run(args, strings.NewReader(stdin), &out, &errb)
+	code = run(context.Background(), args, strings.NewReader(stdin), &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -56,6 +57,30 @@ func TestGenAndCheck(t *testing.T) {
 	code, _, stderr = runCLI(t, "", "check", "-spec", golden, filepath.Join(dir, "missing.ts"))
 	if code != 1 || !strings.Contains(stderr, "does not exist") {
 		t.Fatalf("check missing: code %d, stderr %q", code, stderr)
+	}
+}
+
+func TestGenAndCheckZod(t *testing.T) {
+	dir := t.TempDir()
+	schemas := filepath.Join(dir, "schemas.ts")
+	code, stdout, stderr := runCLI(t, "", "gen", "zod", "-spec", golden, "-o", schemas)
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("gen zod: code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	written, err := os.ReadFile(schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(written), `import { z } from "zod";`) {
+		t.Fatalf("unexpected schemas:\n%s", written)
+	}
+	code, stdout, _ = runCLI(t, "", "check", "-spec", golden, "-zod", schemas)
+	if code != 0 || stdout != schemas+" is up to date\n" {
+		t.Fatalf("check -zod fresh: code %d, stdout %q", code, stdout)
+	}
+	code, _, stderr = runCLI(t, "", "check", "-spec", golden, schemas)
+	if code != 1 || !strings.Contains(stderr, "stale") {
+		t.Fatalf("check without -zod should see a stale client: code %d, stderr %q", code, stderr)
 	}
 }
 
@@ -123,11 +148,11 @@ func TestBadInput(t *testing.T) {
 		{"flag help", []string{"gen", "ts", "-h"}, 0, "", "stdout"},
 		{"unknown command", []string{"build"}, 1, `unknown command "build"`, "stderr"},
 		{"gen without target", []string{"gen"}, 2, "gen needs a target", "stderr"},
-		{"gen unknown target", []string{"gen", "go"}, 2, "the only one is ts", "stderr"},
+		{"gen unknown target", []string{"gen", "go"}, 2, `unknown target "go"`, "stderr"},
 		{"gen extra arg", []string{"gen", "ts", "-spec", golden, "extra"}, 2, `unexpected argument "extra"`, "stderr"},
 		{"gen unknown flag", []string{"gen", "ts", "-x"}, 2, "flag provided but not defined", "stderr"},
 		{"gen without spec", []string{"gen", "ts"}, 2, "-spec is required", "stderr"},
-		{"check without file", []string{"check", "-spec", golden}, 2, "check needs the client file", "stderr"},
+		{"check without file", []string{"check", "-spec", golden}, 2, "check needs the file to compare", "stderr"},
 		{"missing spec file", []string{"gen", "ts", "-spec", filepath.Join(dir, "nope.json")}, 1, "reading OpenAPI document", "stderr"},
 		{"spec not json", []string{"gen", "ts", "-spec", notJSON}, 1, "parsing OpenAPI document", "stderr"},
 		{"spec without paths", []string{"gen", "ts", "-spec", noPaths}, 1, "no paths", "stderr"},

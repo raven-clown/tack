@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-11
+
+### Added
+
+- `tsgen.GenerateZod(doc)` writes Zod schemas: one per component schema and one per operation input, with the bounds, lengths, patterns, enums, formats, and defaults the server enforces, so a form can validate before it sends. Each schema exports a value and a type of the same name; schemas in a reference cycle use `z.lazy` with an explicit type. The file imports `zod` and works with Zod 3.23 and later, Zod 4 included. `tsgen.CheckZod` keeps it fresh like `Check` does for the client.
+- `tack gen zod -spec <file|url|-> [-o schemas.ts]` and `tack check -spec <file|url|-> -zod schemas.ts`.
+- `tack dev [-spec URL] [-o api.ts] [-zod schemas.ts] [-dir .] [-- command...]` builds the directory with `go build`, runs the binary, waits for the document URL to answer, and regenerates the client and schemas, writing only when they changed. A change to a Go file, `go.mod`, or `go.sum` does it again; a failed build keeps the running app and reports the error. A command after `--` replaces the build and run step.
+- `tack mock -spec <file|url|-> [-addr 127.0.0.1:8081]` serves every operation with its success status and a body built from the response schema (examples and defaults first, then values derived from the type, format, bounds, and enum). A `Prefer: code=404` header returns that documented error with its `code` and detail. Responses allow cross-origin requests and the document is served at `/openapi.json`.
+- `examples/petstore` commits `client/schemas.ts` next to its client; CI checks both with `tack check` and type-checks them.
+
 ## [0.4.0] - 2026-10-11
 
 ### Added
@@ -96,7 +106,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/raven-clown/tack/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/raven-clown/tack/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/raven-clown/tack/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/raven-clown/tack/compare/v0.1.0...v0.2.0

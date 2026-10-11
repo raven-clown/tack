@@ -5,25 +5,35 @@ import (
 	"os"
 	"testing"
 
+	"github.com/raven-clown/tack/openapi"
 	"github.com/raven-clown/tack/tsgen"
 )
 
 var update = flag.Bool("update", false, "regenerate client/api.ts")
 
-// TestClient fails when client/api.ts is older than the routes. Regenerate it
-// with go test . -update.
+// TestClient fails when client/api.ts or client/schemas.ts is older than the
+// routes. Regenerate them with go test . -update.
 func TestClient(t *testing.T) {
-	const path = "client/api.ts"
-	if *update {
-		ts, err := tsgen.Generate(newApp().OpenAPI())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, ts, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	files := []struct {
+		path     string
+		generate func(*openapi.Document) ([]byte, error)
+		check    func(*openapi.Document, string) error
+	}{
+		{"client/api.ts", tsgen.Generate, tsgen.Check},
+		{"client/schemas.ts", tsgen.GenerateZod, tsgen.CheckZod},
 	}
-	if err := tsgen.Check(newApp().OpenAPI(), path); err != nil {
-		t.Fatal(err)
+	for _, f := range files {
+		if *update {
+			ts, err := f.generate(newApp().OpenAPI())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(f.path, ts, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := f.check(newApp().OpenAPI(), f.path); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
