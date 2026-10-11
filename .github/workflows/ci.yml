@@ -107,6 +107,22 @@ jobs:
           npm install --no-save --no-audit --no-fund zod@4
           tsc --strict --noEmit --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --skipLibCheck examples/petstore/client/api.ts examples/petstore/client/schemas.ts
 
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: stable
+      - name: Run every fuzz target for 20 seconds
+        run: |
+          set -euo pipefail
+          for target in FuzzQueryValues FuzzBindJSON FuzzParseForm FuzzSplitList FuzzPathParams; do
+            go test -run '^$' -fuzz "^${target}\$" -fuzztime 20s ./internal/bind
+          done
+          go test -run '^$' -fuzz '^FuzzSpecPath$' -fuzztime 20s .
+
   vulncheck:
     name: Vulnerability check
     runs-on: ubuntu-26.04

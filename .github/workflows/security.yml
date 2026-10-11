@@ -19,13 +19,24 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+      - name: Library and generators
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
         with:
-          args: -no-fail -fmt sarif -out gosec.sarif ./...
+          args: -no-fail -exclude-dir=cmd -fmt sarif -out gosec.sarif ./...
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         with:
           sarif_file: gosec.sarif
           category: gosec
+      # The CLI reads, writes, and runs what its arguments name, so the
+      # path, permission, subprocess, and request rules do not apply to it.
+      - name: Command
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: -no-fail -exclude=G118,G204,G301,G304,G306,G703,G704 -fmt sarif -out gosec-cmd.sarif ./cmd/...
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        with:
+          sarif_file: gosec-cmd.sarif
+          category: gosec-cmd
 
   trivy:
     name: Trivy (dependencies, secrets, misconfiguration)

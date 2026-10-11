@@ -7,6 +7,7 @@ linters:
     - errname
     - errorlint
     - gocritic
+    - gosec
     - misspell
     - nilerr
     - noctx
@@ -37,6 +38,12 @@ linters:
         linters:
           - unparam
           - noctx
+          - gosec
+      # The CLI reads, writes, and runs what its arguments name.
+      - path: ^cmd/
+        linters:
+          - gosec
+        text: "G(118|204|301|304|306|703|704)"
 
 formatters:
   enable:
