@@ -278,8 +278,8 @@ func TestScanAndDiff(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "go.mod")); err != nil {
 		t.Fatal(err)
 	}
-	after, _ = scan(dir)
-	if d := diff(after, before); d != filepath.Join(dir, "go.mod") {
+	removed, _ := scan(dir)
+	if d := diff(after, removed); d != filepath.Join(dir, "go.mod") {
 		t.Errorf("diff with a removed file = %q", d)
 	}
 	changed, err := writeIfChanged(filepath.Join(dir, "new", "f.ts"), []byte("a\n"))
