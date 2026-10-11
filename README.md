@@ -4,6 +4,9 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/raven-clown/tack.svg)](https://pkg.go.dev/github.com/raven-clown/tack)
 [![CI](https://github.com/raven-clown/tack/actions/workflows/ci.yml/badge.svg)](https://github.com/raven-clown/tack/actions/workflows/ci.yml)
+[![Security](https://github.com/raven-clown/tack/actions/workflows/security.yml/badge.svg)](https://github.com/raven-clown/tack/actions/workflows/security.yml)
+[![CodeQL](https://github.com/raven-clown/tack/actions/workflows/codeql.yml/badge.svg)](https://github.com/raven-clown/tack/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/raven-clown/tack/badge)](https://scorecard.dev/viewer/?uri=github.com/raven-clown/tack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > ⚠️ **Early development.** tack is pre-1.0. The API may change between minor versions until v1.0. See the [roadmap](#roadmap).
@@ -181,6 +184,34 @@ After v1.0, add-ons ship as separate modules:
 | v1.9 | Tooling | VS Code extension, browser playground, `tack vet` |
 
 tack will not ship its own router, database driver, ORM, Redis client, sign-up system, HTML templating, or infrastructure tooling. Existing libraries do those well.
+
+## Quality and security
+
+Every push and pull request runs:
+
+| Check | What it does |
+| --- | --- |
+| Unit tests | Table-driven tests, `Example` tests for every public function, and golden files for generated JSON Schema and OpenAPI; run with `-race` on the two most recent Go releases |
+| Coverage | Fails below 85% total coverage; the report is in the job summary |
+| Lint | golangci-lint with the config in `.golangci.yml` |
+| govulncheck | Known vulnerabilities reachable from tack's code |
+| gosec | Static analysis for common Go security mistakes |
+| Trivy | Dependencies, leaked secrets, and misconfiguration across the repository |
+| CodeQL | Semantic code analysis |
+| Generated clients | openapi-generator validates the petstore spec and builds Go and TypeScript clients from it |
+| OpenSSF Scorecard | Weekly supply-chain posture score, published on the badge above |
+
+Dependabot keeps dependencies and actions current, and GitHub secret scanning with push protection is on. Findings land in the repository's Security tab. To report a vulnerability, follow [SECURITY.md](SECURITY.md).
+
+Run the same checks locally:
+
+```bash
+go test -race -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1
+```
+
+```bash
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
 
 ## Documentation
 

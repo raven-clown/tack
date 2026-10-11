@@ -28,6 +28,31 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  coverage:
+    name: Coverage (85% minimum)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Test with coverage
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Enforce threshold
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')
+          echo "Total coverage: ${total}%"
+          {
+            echo "## Coverage"
+            echo
+            echo "Total: **${total}%** (minimum 85%)"
+            echo
+            echo '```'
+            go tool cover -func=coverage.out | awk '$3 != "100.0%"' | sort -k3 -n | head -n 25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" 'BEGIN { exit (t + 0 < 85) }' || { echo "::error::coverage ${total}% is below the 85% minimum"; exit 1; }
+
   lint:
     name: Lint
     runs-on: ubuntu-26.04
