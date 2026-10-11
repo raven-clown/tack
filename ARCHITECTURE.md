@@ -6,9 +6,12 @@ This document explains how tack works inside. Read it before making non-trivial 
 
 1. **Built on `net/http`.** `App` implements `http.Handler`. Middleware is `func(http.Handler) http.Handler`. We never invent our own request/response abstraction.
 2. **Types are the single source of truth.** One Go struct drives binding, validation, OpenAPI, and TypeScript generation. These must never disagree.
-3. **Small public API.** Every exported identifier must justify its existence.
-4. **Helpful failures.** Misconfigured routes panic at registration with a message naming the route, the field, and the fix.
-5. **Reflection once.** All reflection runs at registration time and is cached. The request path runs only precomputed plans.
+3. **Types reach the frontend.** Success responses, every error a route declares, and the validation rules all arrive in the generated client. This is the main difference from similar projects.
+4. **Small public API.** Every exported identifier must justify its existence.
+5. **Helpful failures.** Misconfigured routes panic at registration with a message naming the route, the field, and the fix.
+6. **Reflection once.** All reflection runs at registration time and is cached. The request path runs only precomputed plans.
+
+Add-ons (`tackdb`, `tackcache`, ...) exist only where tack knowing the types adds something, such as database errors appearing in `/docs` and the client. Anything an existing library already does well is left to that library.
 
 ## The two phases
 
@@ -55,7 +58,8 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 /internal/schema    Converts Go types to JSON Schema 2020-12 + schema registry
 /openapi            OpenAPI 3.1 document types
 /tsgen              Generates TypeScript from the OpenAPI document (v0.4)
-/cmd/tack           CLI: new, gen ts, spec (v0.5)
+/cmd/tack           CLI: gen, check, dev, mock, new, spec, diff, build (v0.4+)
+/tacktest           Typed test client (v1.3)
 /examples           Runnable example projects (each its own module if it has extra deps)
 /bench              Benchmarks against other frameworks (separate module)
 ```

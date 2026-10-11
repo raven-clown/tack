@@ -165,7 +165,7 @@ func TestDocsPage(t *testing.T) {
 			if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 				t.Fatalf("status %d, type %q", rec.Code, rec.Header().Get("Content-Type"))
 			}
-			if !strings.Contains(body, tt.wantSpec) || !strings.Contains(body, scalarURL) {
+			if !strings.Contains(body, tt.wantSpec) || !strings.Contains(body, scalarURL) || !strings.Contains(body, "body.dark-mode { color-scheme: dark; }") {
 				t.Fatalf("docs page:\n%s", body)
 			}
 			if strings.Contains(body, "<API>") {

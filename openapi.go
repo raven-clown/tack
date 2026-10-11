@@ -96,7 +96,14 @@ var docsTemplate = template.Must(template.New("docs").Parse(`<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{{.Title}}</title>
+<style>
+html { color-scheme: light dark; }
+body { margin: 0; }
+body.dark-mode { color-scheme: dark; }
+body.light-mode { color-scheme: light; }
+</style>
 </head>
 <body>
 <div id="app"></div>

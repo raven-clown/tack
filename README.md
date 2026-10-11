@@ -135,27 +135,34 @@ tack is inspired by [FastAPI](https://fastapi.tiangolo.com/), and shares goals w
 
 ## Roadmap
 
+The public launch is planned for v0.5, once the parts that set tack apart are all in place.
+
 | Version | Focus | Status |
 | --- | --- | --- |
 | v0.1 | Core: typed handlers, binding, validation, errors | ✅ Done |
 | v0.2 | OpenAPI 3.1 + `/docs` | ✅ Done |
-| v0.3 | Route groups, middleware, auth schemes in `/docs` | Planned |
-| v0.4 | TypeScript client with typed errors and Zod schemas from `validate` tags; `tack check` fails CI when the client is stale | Planned |
-| v0.5 | File uploads, SSE, `tack new`, `tack dev` (regenerate the client on save), `tack mock`, graceful shutdown | Planned |
+| v0.3 | Route groups, middleware, auth schemes in `/docs`, errors declared per route | Planned |
+| v0.4 | TypeScript client where the declared errors form a typed union; `tack check` fails CI when the client is stale | Planned |
+| v0.5 | `tack dev` (save a Go file, get a fresh client), Zod schemas from `validate` tags, `tack mock` | Planned |
+| v0.6 | File uploads, SSE, `tack new`, graceful shutdown, CLI releases | Planned |
+| v0.9 | Release candidate: API review, fuzzing, benchmarks | Planned |
 | v1.0 | Stable API, docs site, real-world examples | Planned |
 
-Add-ons, each in its own module:
+After v1.0, add-ons ship as separate modules:
 
 | Version | Add-on | What it does |
 | --- | --- | --- |
-| v1.1 | `tackdb` (PostgreSQL) | Maps database errors to 404/409, a transaction per request, `/health` checks the database |
-| v1.1 | `tack new --db postgres --cache redis` | A project with PostgreSQL, Redis, sqlc, migrations, and docker-compose that runs with one command |
-| v1.2 | `tackcache` (Redis) | `tack.Cache(5*time.Minute)` on a route caches responses in Redis, and `/docs` shows it |
-| v1.2 | Pagination | `tack.Page[Pet]` once, reflected in `/docs` and the TypeScript client |
-| v1.2 | `tacktest` | Tests with a typed client instead of hand-written JSON |
-| v1.3 | `tack diff` | Flags breaking API changes in pull requests |
-| v1.3 | `tackotel` | OpenTelemetry tracing for every request |
-| v1.4 | `tackmcp` | Exposes existing routes as MCP tools |
+| v1.1 | `tackdb`, `tack new --db postgres --cache redis` | PostgreSQL errors mapped to 404/409/422 and shown in `/docs`, a transaction per request, `/health`; a project template with sqlc, migrations, and docker-compose |
+| v1.2 | `tackcache`, `tack.Page[T]` | Redis response caching declared per route and shown in `/docs`; typed pagination that reaches the TypeScript client |
+| v1.3 | `tacktest`, `tack diff` | A typed test client; breaking-change detection for pull requests |
+| v1.4 | `tackauth`, `tackjobs` | JWT and session middleware with typed users and automatic 401/403 docs; typed background jobs on River |
+| v1.5 | `tackotel`, rate limits, `tack build` | OpenTelemetry per operation; rate limits declared in `/docs`; small container images |
+| v1.6 | `tackmcp`, frontend hooks | Routes exposed as MCP tools; TanStack Query hooks for React and Vue |
+| v1.7 | More clients | Go, Swift, Kotlin, and Python clients with the same typed errors |
+| v1.8 | Versioning, webhooks, WebSocket | API versions side by side; typed webhooks and WebSocket messages |
+| v1.9 | Tooling | VS Code extension, browser playground, `tack vet` |
+
+tack will not ship its own router, database driver, ORM, Redis client, sign-up system, HTML templating, or infrastructure tooling. Existing libraries do those well.
 
 ## Documentation
 
