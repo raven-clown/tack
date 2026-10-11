@@ -220,6 +220,9 @@ func (z *zodGen) base(s *openapi.Schema, top bool) string {
 	}
 	switch s.Type {
 	case "string":
+		if s.Format == "binary" {
+			return "z.instanceof(Blob)"
+		}
 		e := "z.string()"
 		switch s.Format {
 		case "email":

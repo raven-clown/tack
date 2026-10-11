@@ -98,8 +98,8 @@ func firstDiff(a, b []byte) int {
 // operation that needs one of them fails generation.
 var reserved = []string{
 	"Client", "ClientOptions", "RequestOptions", "Credential", "SecurityName",
-	"Result", "Ok", "Err", "ApiError", "unwrap", "Op", "HeaderKind",
-	"securitySchemes", "appendQuery", "readHeaders", "problemMessage", "isJSON",
+	"Result", "Ok", "Err", "ApiError", "unwrap", "Op", "HeaderKind", "ServerEvent",
+	"securitySchemes", "appendQuery", "readHeaders", "problemMessage", "isJSON", "events", "formBody",
 }
 
 // reservedMembers are the members of Client an operation ID may not shadow.
@@ -125,8 +125,10 @@ type operation struct {
 	cookies              []string
 	body                 *openapi.RequestBody
 	bodySchema           *openapi.Schema
+	bodyKind             string // json, multipart, or urlencoded
 	okStatus             int
 	okSchema             *openapi.Schema // nil when the response has no body
+	stream               bool            // the success response is text/event-stream; okSchema is one event
 	headers              []*header       // sorted by name
 	errors               []*errResponse  // sorted by status
 	security             []openapi.SecurityRequirement
@@ -267,9 +269,17 @@ func (g *generator) operation(method, path string, op *openapi.Operation) (*oper
 		if _, dup := seen["body"]; dup {
 			return nil, fmt.Errorf("parameter %q would share the input property the request body uses; rename it", "body")
 		}
-		mt := o.body.Content["application/json"]
+		var mt *openapi.MediaType
+		for _, kind := range []struct{ ct, name string }{
+			{"application/json", "json"}, {"application/x-www-form-urlencoded", "urlencoded"}, {"multipart/form-data", "multipart"},
+		} {
+			if mt = o.body.Content[kind.ct]; mt != nil {
+				o.bodyKind = kind.name
+				break
+			}
+		}
 		if mt == nil {
-			return nil, fmt.Errorf("request body has no application/json content; the client sends JSON only")
+			return nil, fmt.Errorf("request body has no application/json, multipart/form-data, or application/x-www-form-urlencoded content")
 		}
 		o.bodySchema = mt.Schema
 	}
@@ -310,7 +320,10 @@ func (g *generator) operation(method, path string, op *openapi.Operation) (*oper
 		if len(res.Content) > 0 {
 			mt := res.Content["application/json"]
 			if mt == nil {
-				return nil, fmt.Errorf("response %d has no application/json content; the client reads JSON only", o.okStatus)
+				if mt = res.Content["text/event-stream"]; mt == nil {
+					return nil, fmt.Errorf("response %d has no application/json or text/event-stream content", o.okStatus)
+				}
+				o.stream = true
 			}
 			o.okSchema = mt.Schema
 			if o.okSchema == nil {

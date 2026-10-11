@@ -173,6 +173,52 @@ func TestGenerateShapes(t *testing.T) {
 	}
 }
 
+func TestGenerateFormsAndStreams(t *testing.T) {
+	form := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{
+		"avatar": {Type: "string", Format: "binary"},
+		"photos": {Type: "array", Items: &openapi.Schema{Type: "string", Format: "binary"}},
+		"name":   {Type: "string"},
+	}, Required: []string{"avatar"}}
+	doc := testDoc(map[string]*openapi.PathItem{
+		"/upload": {Post: &openapi.Operation{
+			RequestBody: &openapi.RequestBody{Required: true, Content: map[string]*openapi.MediaType{"multipart/form-data": {Schema: form}}},
+			Responses:   map[string]*openapi.Response{"204": {}},
+		}},
+		"/login": {Post: &openapi.Operation{
+			RequestBody: &openapi.RequestBody{Content: map[string]*openapi.MediaType{
+				"application/x-www-form-urlencoded": {Schema: &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{"user": {Type: "string"}}}},
+				"multipart/form-data":               {Schema: &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{"user": {Type: "string"}}}},
+			}},
+			Responses: map[string]*openapi.Response{"204": {}},
+		}},
+		"/ticks": {Get: &openapi.Operation{
+			Responses: map[string]*openapi.Response{"200": {Content: map[string]*openapi.MediaType{"text/event-stream": {Schema: ref("Tick")}}}},
+		}},
+	}, map[string]*openapi.Schema{"Tick": {Type: "object", Properties: map[string]*openapi.Schema{"n": {Type: "integer"}}, Required: []string{"n"}}})
+	out, err := Generate(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := string(out)
+	for _, want := range []string{
+		`{ method: "POST", path: "/upload", body: "multipart", ok: 204 }`,
+		"export interface PostUploadInput {\n  body: { avatar: Blob; name?: string; photos?: Blob[] };\n}",
+		`{ method: "POST", path: "/login", body: "urlencoded", ok: 204 }`,
+		"getTicks(init?: RequestOptions): Promise<Result<AsyncIterable<ServerEvent<Tick>>, GetTicksError>> {\n    return this.send<AsyncIterable<ServerEvent<Tick>>, GetTicksError>({ method: \"GET\", path: \"/ticks\", ok: 200, stream: true }, {}, init);",
+	} {
+		if !strings.Contains(ts, want) {
+			t.Errorf("output lacks:\n%s\n\nfull output:\n%s", want, ts)
+		}
+	}
+	zod, err := GenerateZod(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "body: z.object({ avatar: z.instanceof(Blob), name: z.string().optional(), photos: z.array(z.instanceof(Blob)).optional() }),"; !strings.Contains(string(zod), want) {
+		t.Errorf("zod output lacks:\n%s\n\nfull output:\n%s", want, zod)
+	}
+}
+
 func TestGenerateDeterministic(t *testing.T) {
 	doc := testDoc(map[string]*openapi.PathItem{
 		"/b": {Get: &openapi.Operation{Responses: jsonOK(ref("B"))}, Post: &openapi.Operation{Responses: jsonOK(ref("A"))}},
@@ -234,12 +280,12 @@ func TestGenerateErrors(t *testing.T) {
 		{"body param", map[string]*openapi.PathItem{"/a": {Post: &openapi.Operation{Parameters: []*openapi.Parameter{param("body", "query")},
 			RequestBody: &openapi.RequestBody{Content: map[string]*openapi.MediaType{"application/json": {}}}, Responses: ok}}}, nil, nil, `parameter "body" would share`},
 		{"param location", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{Parameters: []*openapi.Parameter{param("x", "form")}, Responses: ok}}}, nil, nil, `unsupported location "form"`},
-		{"form body", map[string]*openapi.PathItem{"/a": {Post: &openapi.Operation{RequestBody: &openapi.RequestBody{Content: map[string]*openapi.MediaType{"multipart/form-data": {}}}, Responses: ok}}}, nil, nil,
-			"request body has no application/json content"},
+		{"text body", map[string]*openapi.PathItem{"/a": {Post: &openapi.Operation{RequestBody: &openapi.RequestBody{Content: map[string]*openapi.MediaType{"text/plain": {}}}, Responses: ok}}}, nil, nil,
+			"request body has no application/json, multipart/form-data, or application/x-www-form-urlencoded content"},
 		{"no success", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{Responses: map[string]*openapi.Response{"404": {}}}}}, nil, nil, "no 2xx or 3xx response"},
 		{"two successes", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{Responses: map[string]*openapi.Response{"200": {}, "202": {}}}}}, nil, nil, "several success responses ([200 202])"},
 		{"html response", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{Responses: map[string]*openapi.Response{"200": {Content: map[string]*openapi.MediaType{"text/html": {}}}}}}}, nil, nil,
-			"response 200 has no application/json content"},
+			"response 200 has no application/json or text/event-stream content"},
 		{"unknown scheme", map[string]*openapi.PathItem{"/a": {Get: &openapi.Operation{Security: []openapi.SecurityRequirement{{"bearer": nil}}, Responses: ok}}}, nil, nil,
 			`security scheme "bearer" is not in components.securitySchemes`},
 	}

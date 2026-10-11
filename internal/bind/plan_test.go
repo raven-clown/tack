@@ -1,7 +1,9 @@
 package bind
 
 import (
+	"bytes"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -315,5 +317,108 @@ func TestBindHeaderList(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.IDs, []int{1, 2, 3}) {
 		t.Fatalf("IDs = %v", got.IDs)
+	}
+}
+
+type formInput struct {
+	Caption string                  `form:"caption"`
+	Photo   *multipart.FileHeader   `form:"photo"`
+	Extras  []*multipart.FileHeader `form:"extras"`
+	Tags    []string                `form:"tag"`
+	Limit   int                     `form:"limit" default:"3"`
+	Page    int                     `query:"page"`
+}
+
+func TestFormPlan(t *testing.T) {
+	p, err := New(reflect.TypeFor[formInput](), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if form, files := p.HasForm(); !form || !files {
+		t.Errorf("HasForm = %v, %v", form, files)
+	}
+	if params := p.Params(); len(params) != 1 || params[0].Name != "page" {
+		t.Errorf("Params should hold only the query value: %+v", params)
+	}
+	fields := p.FormFields()
+	if len(fields) != 5 || fields[1].Name != "photo" || !fields[1].File || fields[2].Name != "extras" || !fields[2].File || fields[0].File {
+		t.Errorf("FormFields: %+v", fields)
+	}
+	if p.Locations()["Photo"] != "form.photo" || p.Locations()["Tags"] != "form.tag" {
+		t.Errorf("locations: %v", p.Locations())
+	}
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("caption", "hi")
+	_ = w.WriteField("tag", "a")
+	_ = w.WriteField("tag", "b")
+	part, _ := w.CreateFormFile("photo", "c.jpg")
+	_, _ = part.Write([]byte("x"))
+	part, _ = w.CreateFormFile("extras", "1.png")
+	_, _ = part.Write([]byte("y"))
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, "/?page=2", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	var in formInput
+	if err := p.Bind(req, &in); err != nil {
+		t.Fatal(err)
+	}
+	if in.Caption != "hi" || in.Photo == nil || in.Photo.Filename != "c.jpg" || len(in.Extras) != 1 || len(in.Tags) != 2 || in.Limit != 3 || in.Page != 2 {
+		t.Errorf("bound %+v", in)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("caption=plain&limit=9"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	in = formInput{}
+	if err := p.Bind(req, &in); err != nil || in.Caption != "plain" || in.Limit != 9 || in.Photo != nil {
+		t.Errorf("urlencoded: %+v, %v", in, err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	err = p.Bind(req, &formInput{})
+	var be *Error
+	if !errors.As(err, &be) || be.Status != http.StatusUnsupportedMediaType {
+		t.Errorf("json to a form: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("limit=abc"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	err = p.Bind(req, &formInput{})
+	if !errors.As(err, &be) || be.Status != http.StatusBadRequest || len(be.Fields) != 1 || be.Fields[0].Location != "form.limit" {
+		t.Errorf("bad value: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("caption=x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Body = http.MaxBytesReader(nil, req.Body, 3)
+	err = p.Bind(req, &formInput{})
+	if !errors.As(err, &be) || be.Status != http.StatusRequestEntityTooLarge {
+		t.Errorf("too large: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		typ  reflect.Type
+		want string
+	}{
+		{"body and form", reflect.TypeFor[struct {
+			Body struct{}
+			X    string `form:"x"`
+		}](), "has both a Body field and form fields"},
+		{"file in header", reflect.TypeFor[struct {
+			F *multipart.FileHeader `header:"f"`
+		}](), "files come from multipart forms; use a form tag instead of header"},
+		{"file default", reflect.TypeFor[struct {
+			F []*multipart.FileHeader `form:"f" default:"x"`
+		}](), "default is not supported on files"},
+		{"form slice of structs", reflect.TypeFor[struct {
+			F []struct{} `form:"f"`
+		}](), "*multipart.FileHeader in a form"},
+	} {
+		if _, err := New(tt.typ, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: got %v, want %q", tt.name, err, tt.want)
+		}
 	}
 }

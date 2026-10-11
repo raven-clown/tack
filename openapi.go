@@ -189,6 +189,17 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 		})
 	}
 
+	if form, files := plan.HasForm(); form {
+		s, required, err := a.formSchema(plan)
+		if err != nil {
+			return err
+		}
+		body := &openapi.RequestBody{Required: required, Content: map[string]*openapi.MediaType{"multipart/form-data": {Schema: s}}}
+		if !files {
+			body.Content["application/x-www-form-urlencoded"] = &openapi.MediaType{Schema: s}
+		}
+		op.RequestBody = body
+	}
 	f, required, hasBody := plan.Body()
 	if hasBody {
 		if f.Type.Kind() == reflect.Pointer {
@@ -213,7 +224,12 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 		if err != nil {
 			return fmt.Errorf("output type %s: %w", out.typ, err)
 		}
-		ok.Content = map[string]*openapi.MediaType{"application/json": {Schema: s}}
+		if out.stream {
+			ok.Description = "A stream of server-sent events; the data of each is one JSON value"
+			ok.Content = map[string]*openapi.MediaType{"text/event-stream": {Schema: s}}
+		} else {
+			ok.Content = map[string]*openapi.MediaType{"application/json": {Schema: s}}
+		}
 	}
 	for _, h := range out.headers {
 		s, err := a.registry.Field(h.field)
@@ -254,6 +270,39 @@ func (a *App) addOperation(method, route string, plan *bind.Plan, out *output, c
 	a.opIDs[op.OperationID] = method + " " + route
 	a.spec = nil
 	return nil
+}
+
+// formSchema documents form fields as one object schema, files as binary
+// strings, and reports whether any field is required.
+func (a *App) formSchema(plan *bind.Plan) (*openapi.Schema, bool, error) {
+	s := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{}}
+	required := false
+	for _, f := range plan.FormFields() {
+		var fs *openapi.Schema
+		if f.File {
+			fs = &openapi.Schema{Type: "string", Format: "binary"}
+			if f.Field.Type.Kind() == reflect.Slice {
+				fs = &openapi.Schema{Type: "array", Items: fs}
+			}
+			if d := f.Field.Tag.Get("doc"); d != "" {
+				fs.Description = d
+			}
+		} else {
+			var err error
+			if fs, err = a.registry.Field(f.Field); err != nil {
+				return nil, false, fmt.Errorf("field %s: %w", f.Field.Name, err)
+			}
+			fs.Nullable = false
+		}
+		s.Properties[f.Name] = fs
+		_, hasDefault := f.Field.Tag.Lookup("default")
+		if !hasDefault && a.zeroFails(f.Field) {
+			s.Required = append(s.Required, f.Name)
+			required = true
+		}
+	}
+	slices.Sort(s.Required)
+	return s, required, nil
 }
 
 // addErrors documents errs on op, one problem schema per code.

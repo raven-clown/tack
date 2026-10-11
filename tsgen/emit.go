@@ -58,6 +58,9 @@ func (g *generator) emitMethod(o *operation) {
 	data := "void"
 	if o.okSchema != nil {
 		data = g.typeOf(o.okSchema)
+		if o.stream {
+			data = "AsyncIterable<ServerEvent<" + data + ">>"
+		}
 	}
 	errType := o.typeName + "Error"
 	generics := data + ", " + errType
@@ -99,10 +102,17 @@ func (o *operation) spec() string {
 		parts = append(parts, "headers: "+stringArray(h))
 	}
 	if o.body != nil {
-		parts = append(parts, "body: true")
+		if o.bodyKind == "json" {
+			parts = append(parts, "body: true")
+		} else {
+			parts = append(parts, "body: "+tsString(o.bodyKind))
+		}
 	}
 	parts = append(parts, "ok: "+strconv.Itoa(o.okStatus))
-	if o.okSchema != nil {
+	switch {
+	case o.stream:
+		parts = append(parts, "stream: true")
+	case o.okSchema != nil:
 		parts = append(parts, "json: true")
 	}
 	if len(o.errors) > 0 {

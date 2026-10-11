@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,6 +109,26 @@ func specApp() *App {
 	}) (map[string]int, error) {
 		return nil, nil
 	})
+	Post(app, "/pets/{id}/photo", func(context.Context, struct {
+		ID      int                     `path:"id"`
+		Caption string                  `form:"caption" validate:"max=100" doc:"Shown under the photo"`
+		Photo   *multipart.FileHeader   `form:"photo" validate:"required" doc:"JPEG or PNG"`
+		Extras  []*multipart.FileHeader `form:"extras"`
+		Tags    []string                `form:"tag"`
+	}) (struct{}, error) {
+		return struct{}{}, nil
+	}, Status(http.StatusNoContent), Tags("pets"))
+	Post(app, "/login", func(context.Context, struct {
+		User     string `form:"user" validate:"required"`
+		Password string `form:"password" validate:"required"`
+	}) (map[string]string, error) {
+		return nil, nil
+	})
+	Get(app, "/pets/{id}/events", func(context.Context, struct {
+		ID int `path:"id"`
+	}) (Stream[Event[Animal]], error) {
+		return nil, nil
+	}, Summary("Follow a pet"), Tags("pets"))
 	Get(app, "/{$}", nop)
 	return app
 }

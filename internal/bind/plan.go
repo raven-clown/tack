@@ -8,10 +8,20 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"reflect"
 	"strings"
+)
+
+// maxFormMemory is how much of a multipart body stays in memory before parts
+// spill to temporary files.
+const maxFormMemory = 32 << 20
+
+var (
+	fileType  = reflect.TypeFor[*multipart.FileHeader]()
+	filesType = reflect.TypeFor[[]*multipart.FileHeader]()
 )
 
 type source int
@@ -21,6 +31,7 @@ const (
 	srcQuery
 	srcHeader
 	srcCookie
+	srcForm
 )
 
 var sources = [...]struct {
@@ -31,6 +42,7 @@ var sources = [...]struct {
 	srcQuery:  {"query", "query"},
 	srcHeader: {"header", "header"},
 	srcCookie: {"cookie", "cookie"},
+	srcForm:   {"form", "form"},
 }
 
 // FieldError describes one problem with one request value.
@@ -57,6 +69,7 @@ type step struct {
 	index   []int
 	set     setter
 	slice   bool
+	file    bool // a *multipart.FileHeader or a slice of them
 	def     *reflect.Value
 }
 
@@ -72,6 +85,8 @@ type Plan struct {
 	steps     []step
 	body      *body
 	hasQuery  bool
+	hasForm   bool
+	hasFile   bool
 	locations map[string]string
 }
 
@@ -84,6 +99,9 @@ func New(t reflect.Type, pathParams []string) (*Plan, error) {
 	seen := map[string]string{}
 	if err := p.walk(t, nil, "", seen); err != nil {
 		return nil, err
+	}
+	if p.hasForm && p.body != nil {
+		return nil, fmt.Errorf("input type %s has both a Body field and form fields; a request body is JSON or a form, not both", t)
 	}
 
 	bound := map[string]bool{}
@@ -129,7 +147,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			continue
 		}
 		if n > 1 {
-			return fmt.Errorf("field %s has more than one source tag; keep only one of path, query, header, or cookie", goPath)
+			return fmt.Errorf("field %s has more than one source tag; keep only one of path, query, header, cookie, or form", goPath)
 		}
 		if n == 0 {
 			if f.Name == "Body" && goPrefix == "" {
@@ -140,7 +158,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			if f.Tag.Get("json") == "-" {
 				continue
 			}
-			return fmt.Errorf("field %s has no source tag; add a path, query, header, or cookie tag, name it Body to read the JSON body, or tag it json:\"-\" to ignore it", goPath)
+			return fmt.Errorf("field %s has no source tag; add a path, query, header, cookie, or form tag, name it Body to read the JSON body, or tag it json:\"-\" to ignore it", goPath)
 		}
 
 		if name == "" || name == "-" {
@@ -157,16 +175,31 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 		seen[key] = goPath
 
 		ft := f.Type
+		if src == srcForm {
+			p.hasForm = true
+		}
+		if ft == fileType || ft == filesType {
+			if src != srcForm {
+				return fmt.Errorf("field %s: files come from multipart forms; use a form tag instead of %s", goPath, sources[src].tag)
+			}
+			if _, ok := f.Tag.Lookup("default"); ok {
+				return fmt.Errorf("field %s: default is not supported on files; remove the default tag", goPath)
+			}
+			p.hasFile = true
+			p.steps = append(p.steps, step{src: src, field: f, name: name, display: display, loc: "form." + display, index: idx, slice: ft == filesType, file: true})
+			p.locations[goPath] = "form." + display
+			continue
+		}
 		isSlice := ft.Kind() == reflect.Slice
 		if isSlice {
-			if src != srcQuery && src != srcHeader {
-				return fmt.Errorf("field %s: %s values cannot be slices; use a query or header tag for repeated values", goPath, sources[src].tag)
+			if src != srcQuery && src != srcHeader && src != srcForm {
+				return fmt.Errorf("field %s: %s values cannot be slices; use a query, header, or form tag for repeated values", goPath, sources[src].tag)
 			}
 			ft = ft.Elem()
 		}
 		set, err := converter(ft)
 		if err != nil {
-			return fmt.Errorf("field %s: %w; use a string, bool, number, time.Time, or a type implementing encoding.TextUnmarshaler", goPath, err)
+			return fmt.Errorf("field %s: %w; use a string, bool, number, time.Time, a type implementing encoding.TextUnmarshaler, or *multipart.FileHeader in a form", goPath, err)
 		}
 
 		s := step{src: src, field: f, name: name, display: display, loc: sources[src].prefix + "." + display, index: idx, set: set, slice: isSlice}
@@ -207,20 +240,39 @@ func sourceTag(f reflect.StructField) (source, string, int) {
 // HasBody reports whether the input reads a JSON body.
 func (p *Plan) HasBody() bool { return p.body != nil }
 
+// HasForm reports whether the input reads a form body (form tags), and
+// whether any of its fields is a file.
+func (p *Plan) HasForm() (form, files bool) { return p.hasForm, p.hasFile }
+
 // Param describes one bound request value.
 type Param struct {
 	In    string
 	Name  string
 	Field reflect.StructField
+	File  bool // a form field holding one or more uploaded files
 }
 
-// Params returns the plan's non-body values in field order.
+// Params returns the plan's path, query, header, and cookie values in field
+// order.
 func (p *Plan) Params() []Param {
-	params := make([]Param, len(p.steps))
-	for i, s := range p.steps {
-		params[i] = Param{In: sources[s.src].tag, Name: s.display, Field: s.field}
+	var params []Param
+	for _, s := range p.steps {
+		if s.src != srcForm {
+			params = append(params, Param{In: sources[s.src].tag, Name: s.display, Field: s.field})
+		}
 	}
 	return params
+}
+
+// FormFields returns the plan's form values and files in field order.
+func (p *Plan) FormFields() []Param {
+	var fields []Param
+	for _, s := range p.steps {
+		if s.src == srcForm {
+			fields = append(fields, Param{In: "form", Name: s.display, Field: s.field, File: s.file})
+		}
+	}
+	return fields
 }
 
 // Body returns the Body field and whether the body is required.
@@ -243,6 +295,11 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 	v := reflect.ValueOf(dst).Elem()
 	var fields []FieldError
 
+	if p.hasForm {
+		if err := p.parseForm(r); err != nil {
+			return err
+		}
+	}
 	if len(p.steps) > 0 {
 		var query map[string][]string
 		if p.hasQuery {
@@ -250,6 +307,10 @@ func (p *Plan) Bind(r *http.Request, dst any) error {
 		}
 		for i := range p.steps {
 			s := &p.steps[i]
+			if s.file {
+				bindFiles(r, v.FieldByIndex(s.index), s)
+				continue
+			}
 			values := lookup(r, query, s)
 			if len(values) == 0 || (len(values) == 1 && values[0] == "") {
 				if s.def != nil {
@@ -322,6 +383,8 @@ func lookup(r *http.Request, query map[string][]string, s *step) []string {
 		return query[s.name]
 	case srcHeader:
 		return r.Header[s.name]
+	case srcForm:
+		return r.PostForm[s.name]
 	default:
 		c, err := r.Cookie(s.name)
 		if err != nil {
@@ -329,6 +392,56 @@ func lookup(r *http.Request, query map[string][]string, s *step) []string {
 		}
 		return []string{c.Value}
 	}
+}
+
+// parseForm reads a multipart or URL-encoded form body. A form with files
+// is read with r.ParseMultipartForm, whose temporary files the caller removes
+// with r.MultipartForm.RemoveAll once the handler is done.
+func (p *Plan) parseForm(r *http.Request) error {
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil && r.Header.Get("Content-Type") != "" {
+		return &Error{Status: http.StatusUnsupportedMediaType, Detail: fmt.Sprintf("content type %q is not supported; send multipart/form-data", r.Header.Get("Content-Type"))}
+	}
+	switch mt {
+	case "multipart/form-data":
+		err = r.ParseMultipartForm(maxFormMemory)
+	case "application/x-www-form-urlencoded", "":
+		err = r.ParseForm()
+	default:
+		return &Error{Status: http.StatusUnsupportedMediaType, Detail: fmt.Sprintf("content type %q is not supported; send multipart/form-data", mt)}
+	}
+	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || limitHit(r.Body) {
+			return &Error{Status: http.StatusRequestEntityTooLarge, Detail: "request body is too large"}
+		}
+		return &Error{Status: http.StatusBadRequest, Detail: "malformed request", Fields: []FieldError{{"form", "is not a valid form: " + err.Error()}}}
+	}
+	return nil
+}
+
+// limitHit reports whether a body wrapped by http.MaxBytesReader has reached
+// its limit, which the multipart reader reports as a plain EOF.
+func limitHit(body io.Reader) bool {
+	var b [1]byte
+	_, err := body.Read(b[:])
+	var mbe *http.MaxBytesError
+	return errors.As(err, &mbe)
+}
+
+func bindFiles(r *http.Request, fv reflect.Value, s *step) {
+	if r.MultipartForm == nil {
+		return
+	}
+	files := r.MultipartForm.File[s.name]
+	if len(files) == 0 {
+		return
+	}
+	if s.slice {
+		fv.Set(reflect.ValueOf(files))
+		return
+	}
+	fv.Set(reflect.ValueOf(files[0]))
 }
 
 func (p *Plan) bindBody(r *http.Request, v reflect.Value) error {

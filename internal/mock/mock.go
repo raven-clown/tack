@@ -141,6 +141,9 @@ func (m *mock) responder(op *openapi.Operation) (*responder, error) {
 			if err != nil {
 				return nil, fmt.Errorf("response %d: %w", status, err)
 			}
+			if ct == eventStream {
+				body = append(append([]byte("data: "), body...), "\n\n"...)
+			}
 			p.contentType, p.body = ct, body
 		}
 		for name, h := range res.Headers {
@@ -191,6 +194,9 @@ type prepared struct {
 	body        []byte
 	headers     map[string]string
 }
+
+// eventStream is the content type whose example is sent as one event.
+const eventStream = "text/event-stream"
 
 func (r *responder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	status := r.ok

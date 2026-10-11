@@ -165,8 +165,12 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 	if err != nil {
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
-	if noBody(cfg.status) && out.typ != reflect.TypeFor[struct{}]() {
-		panic(fmt.Sprintf("tack: %s: Status(%d) sends no body, but the handler returns %s; return struct{} instead", name, cfg.status, out.typ))
+	if noBody(cfg.status) && (out.stream || out.typ != reflect.TypeFor[struct{}]()) {
+		shown := out.typ
+		if out.stream {
+			shown = reflect.TypeFor[Out]()
+		}
+		panic(fmt.Sprintf("tack: %s: Status(%d) sends no body, but the handler returns %s; return struct{} instead", name, cfg.status, shown))
 	}
 	if !strings.HasPrefix(path, "/") {
 		panic(fmt.Sprintf("tack: %s: path must start with \"/\"", name))
@@ -193,10 +197,22 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		rt.declared[e.Code] = true
 		rt.statuses[e.Status] = true
 	}
+	hasForm, _ := plan.HasForm()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var in In
-		if plan.HasBody() {
+		if plan.HasBody() || hasForm {
+			if req.ContentLength > a.maxBody {
+				a.respond(w, req, &Error{Status: http.StatusRequestEntityTooLarge, Code: codeTooLarge, Detail: fmt.Sprintf("request body exceeds %d bytes", a.maxBody)})
+				return
+			}
 			req.Body = http.MaxBytesReader(w, req.Body, a.maxBody)
+		}
+		if hasForm {
+			defer func() {
+				if req.MultipartForm != nil {
+					_ = req.MultipartForm.RemoveAll()
+				}
+			}()
 		}
 		if err := plan.Bind(req, &in); err != nil {
 			a.writeBindError(w, req, err)
@@ -211,6 +227,12 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		res, err := h(req.Context(), in)
 		if err != nil {
 			a.writeError(w, req, err, rt)
+			return
+		}
+		if out.stream {
+			if err := any(res).(streamer).serve(w, req, cfg.status); err != nil {
+				a.writeError(w, req, err, rt)
+			}
 			return
 		}
 		if !out.wrapped() {
@@ -247,15 +269,16 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 func documentedErrors(plan *bind.Plan, cfg routeConfig) []*Error {
 	errs := []*Error{{Status: http.StatusInternalServerError, Code: codeInternal, Detail: "internal error"}}
 	_, _, hasBody := plan.Body()
-	if hasBody || len(plan.Params()) > 0 {
+	hasForm, _ := plan.HasForm()
+	if hasBody || hasForm || len(plan.Params()) > 0 {
 		errs = append(errs,
 			&Error{Status: http.StatusBadRequest, Code: codeMalformed, Detail: "malformed request"},
 			&Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed"})
 	}
-	if hasBody {
+	if hasBody || hasForm {
 		errs = append(errs,
 			&Error{Status: http.StatusRequestEntityTooLarge, Code: codeTooLarge, Detail: "request body too large"},
-			&Error{Status: http.StatusUnsupportedMediaType, Code: codeMediaType, Detail: "content type is not JSON"})
+			&Error{Status: http.StatusUnsupportedMediaType, Code: codeMediaType, Detail: "unsupported content type"})
 	}
 	if len(cfg.security) > 0 {
 		errs = append(errs, ErrUnauthorized)

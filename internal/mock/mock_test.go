@@ -97,8 +97,16 @@ func TestHandler(t *testing.T) {
 		t.Errorf("preflight: %d %v", rec.Code, rec.Header())
 	}
 	routes := Routes(h)
-	if len(routes) != 9 || routes[0] != "GET /" || routes[len(routes)-1] != "DELETE /pets/{id}" {
+	if len(routes) != 12 || routes[0] != "GET /" || routes[len(routes)-1] != "POST /pets/{id}/photo" {
 		t.Errorf("routes: %v", routes)
+	}
+	rec = do(h, "GET", "/pets/3/events")
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "text/event-stream" || !strings.HasPrefix(rec.Body.String(), "data: {\"born\"") || !strings.HasSuffix(rec.Body.String(), "}\n\n") {
+		t.Errorf("event stream: %d %q %s", rec.Code, rec.Header().Get("Content-Type"), rec.Body)
+	}
+	rec = do(h, "POST", "/pets/3/photo")
+	if rec.Code != 204 {
+		t.Errorf("upload: %d %s", rec.Code, rec.Body)
 	}
 	if Routes(http.NotFoundHandler()) != nil {
 		t.Error("Routes of another handler should be nil")

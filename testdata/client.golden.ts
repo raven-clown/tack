@@ -20,6 +20,10 @@ export class Client {
     return this.send<Record<string, number>, PutFilesByPathError>({ method: "PUT", path: "/files/{path}", body: true, ok: 200, json: true, errors: [400, 413, 415, 422, 500] }, input, init);
   }
 
+  postLogin(input: PostLoginInput, init?: RequestOptions): Promise<Result<Record<string, string>, PostLoginError>> {
+    return this.send<Record<string, string>, PostLoginError>({ method: "POST", path: "/login", body: "urlencoded", ok: 200, json: true, errors: [400, 413, 415, 422, 500] }, input, init);
+  }
+
   /** List pets */
   getPets(input: GetPetsInput, init?: RequestOptions): Promise<Result<Animal[], GetPetsError>> {
     return this.send<Animal[], GetPetsError>({ method: "GET", path: "/pets", query: ["kind", "limit", "tag"], headers: ["X-API-Key"], ok: 200, json: true, errors: [400, 422, 500] }, input, init);
@@ -48,6 +52,15 @@ export class Client {
     return this.send<void, DeletePetsByIdError>({ method: "DELETE", path: "/pets/{id}", ok: 204, errors: [400, 422, 500] }, input, init);
   }
 
+  /** Follow a pet */
+  getPetsByIdEvents(input: GetPetsByIdEventsInput, init?: RequestOptions): Promise<Result<AsyncIterable<ServerEvent<Animal>>, GetPetsByIdEventsError>> {
+    return this.send<AsyncIterable<ServerEvent<Animal>>, GetPetsByIdEventsError>({ method: "GET", path: "/pets/{id}/events", ok: 200, stream: true, errors: [400, 422, 500] }, input, init);
+  }
+
+  postPetsByIdPhoto(input: PostPetsByIdPhotoInput, init?: RequestOptions): Promise<Result<void, PostPetsByIdPhotoError>> {
+    return this.send<void, PostPetsByIdPhotoError>({ method: "POST", path: "/pets/{id}/photo", body: "multipart", ok: 204, errors: [400, 413, 415, 422, 500] }, input, init);
+  }
+
   private async send<T, E, H = Record<string, never>>(op: Op, input: object, init?: RequestOptions): Promise<Result<T, E, H>> {
     const values = input as Record<string, unknown>;
     const path = op.path.replace(/\{([^}]+)\}/g, (_, name: string) => encodeURIComponent(String(values[name])));
@@ -61,10 +74,14 @@ export class Client {
     }
     await this.applySecurity(op, headers, query);
     new Headers(init?.headers).forEach((v, k) => headers.set(k, v));
-    let body: string | undefined;
+    let body: BodyInit | undefined;
     if (op.body && values.body !== undefined) {
-      body = JSON.stringify(values.body);
-      if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+      if (op.body === true) {
+        body = JSON.stringify(values.body);
+        if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+      } else {
+        body = formBody(values.body, op.body);
+      }
     }
     const qs = query.toString();
     const url = (this.options.baseUrl ?? "").replace(/\/$/, "") + path + (qs ? "?" + qs : "");
@@ -72,7 +89,10 @@ export class Client {
     const response = await fetchFn(url, { ...init, method: op.method, headers, body });
     if (response.status === op.ok) {
       const empty = response.status === 204 || response.headers.get("Content-Length") === "0";
-      const data = op.json && !empty ? ((await response.json()) as T) : (undefined as T);
+      let data: T;
+      if (op.stream) data = events(response) as T;
+      else if (op.json && !empty) data = (await response.json()) as T;
+      else data = undefined as T;
       return { ok: true, status: response.status, data, headers: readHeaders(response.headers, op.resHeaders) as H, response };
     }
     if ((op.errors ?? []).includes(response.status) && isJSON(response)) {
@@ -152,6 +172,13 @@ export interface Err<E> {
 
 export type Result<T, E, H = Record<string, never>> = Ok<T, H> | Err<E>;
 
+/** One server-sent event; data is the parsed JSON of its data line. */
+export interface ServerEvent<T> {
+  data: T;
+  event?: string;
+  id?: string;
+}
+
 /** Thrown for a response the API does not document, and by unwrap for an error result. */
 export class ApiError extends Error {
   constructor(
@@ -178,9 +205,11 @@ interface Op {
   path: string;
   query?: string[];
   headers?: string[];
-  body?: boolean;
+  /** true sends JSON; "multipart" sends FormData; "urlencoded" sends URLSearchParams. */
+  body?: boolean | "multipart" | "urlencoded";
   ok: number;
   json?: boolean;
+  stream?: boolean;
   errors?: number[];
   resHeaders?: [string, HeaderKind][];
   security?: string[][];
@@ -193,6 +222,74 @@ function appendQuery(query: URLSearchParams, name: string, value: unknown): void
     return;
   }
   query.append(name, typeof value === "object" ? JSON.stringify(value) : String(value));
+}
+
+function formBody(value: unknown, kind: "multipart" | "urlencoded"): BodyInit {
+  const form = kind === "multipart" ? new FormData() : new URLSearchParams();
+  const add = (name: string, v: unknown) => {
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v)) {
+      for (const item of v) add(name, item);
+      return;
+    }
+    if (v instanceof Blob) {
+      if (form instanceof FormData) form.append(name, v);
+      return;
+    }
+    form.append(name, typeof v === "object" ? JSON.stringify(v) : String(v));
+  };
+  for (const [name, v] of Object.entries((value ?? {}) as Record<string, unknown>)) add(name, v);
+  return form;
+}
+
+/** Reads a text/event-stream body as parsed events until the server closes it. */
+async function* events<T>(response: Response): AsyncIterable<ServerEvent<T>> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let data: string[] = [];
+  let event: string | undefined;
+  let id: string | undefined;
+  const flush = (): ServerEvent<T> | undefined => {
+    if (data.length === 0) {
+      event = id = undefined;
+      return undefined;
+    }
+    const text = data.join("\n");
+    data = [];
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // A data line that is not JSON is delivered as text.
+    }
+    const out: ServerEvent<T> = { data: parsed as T };
+    if (event !== undefined) out.event = event;
+    if (id !== undefined) out.id = id;
+    event = id = undefined;
+    return out;
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += done ? "\n\n" : decoder.decode(value, { stream: true });
+      let index: number;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index).replace(/\r$/, "");
+        buffer = buffer.slice(index + 1);
+        if (line === "") {
+          const e = flush();
+          if (e) yield e;
+        } else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+        else if (line.startsWith("event:")) event = line.slice(6).replace(/^ /, "");
+        else if (line.startsWith("id:")) id = line.slice(3).replace(/^ /, "");
+      }
+      if (done) return;
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function readHeaders(headers: Headers, spec?: [string, HeaderKind][]): Record<string, unknown> {
@@ -253,6 +350,12 @@ export interface PutFilesByPathInput {
 
 export type PutFilesByPathError = MalformedRequestProblem | BodyTooLargeProblem | UnsupportedMediaTypeProblem | ValidationFailedProblem | InternalProblem;
 
+export interface PostLoginInput {
+  body: { password: string; user: string };
+}
+
+export type PostLoginError = MalformedRequestProblem | BodyTooLargeProblem | UnsupportedMediaTypeProblem | ValidationFailedProblem | InternalProblem;
+
 export interface GetPetsInput {
   kind?: "cat" | "dog";
   /**
@@ -292,6 +395,19 @@ export interface DeletePetsByIdInput {
 }
 
 export type DeletePetsByIdError = MalformedRequestProblem | ValidationFailedProblem | InternalProblem;
+
+export interface GetPetsByIdEventsInput {
+  id: number;
+}
+
+export type GetPetsByIdEventsError = MalformedRequestProblem | ValidationFailedProblem | InternalProblem;
+
+export interface PostPetsByIdPhotoInput {
+  id: number;
+  body: { caption?: string; extras?: Blob[]; photo: Blob; tag?: string[] };
+}
+
+export type PostPetsByIdPhotoError = MalformedRequestProblem | BodyTooLargeProblem | UnsupportedMediaTypeProblem | ValidationFailedProblem | InternalProblem;
 
 export interface Animal {
   born: string;
@@ -344,7 +460,7 @@ export interface ProblemDetails {
 /** authentication required */
 export type UnauthorizedProblem = ProblemDetails & { code: "unauthorized" };
 
-/** content type is not JSON */
+/** unsupported content type */
 export type UnsupportedMediaTypeProblem = ProblemDetails & { code: "unsupported_media_type" };
 
 /** validation failed */

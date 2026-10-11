@@ -57,7 +57,7 @@ export type NameTakenProblem = z.infer<typeof NameTakenProblem>;
 export const UnauthorizedProblem = ProblemDetails.and(z.object({ code: z.literal("unauthorized") })).describe("authentication required");
 export type UnauthorizedProblem = z.infer<typeof UnauthorizedProblem>;
 
-export const UnsupportedMediaTypeProblem = ProblemDetails.and(z.object({ code: z.literal("unsupported_media_type") })).describe("content type is not JSON");
+export const UnsupportedMediaTypeProblem = ProblemDetails.and(z.object({ code: z.literal("unsupported_media_type") })).describe("unsupported content type");
 export type UnsupportedMediaTypeProblem = z.infer<typeof UnsupportedMediaTypeProblem>;
 
 export const ValidationFailedProblem = ProblemDetails.and(z.object({ code: z.literal("validation_failed") })).describe("validation failed");
@@ -78,6 +78,11 @@ export const PutFilesByPathInput = z.object({
   body: z.record(z.string(), z.unknown()),
 });
 export type PutFilesByPathInput = z.infer<typeof PutFilesByPathInput>;
+
+export const PostLoginInput = z.object({
+  body: z.object({ password: z.string(), user: z.string() }),
+});
+export type PostLoginInput = z.infer<typeof PostLoginInput>;
 
 export const GetPetsInput = z.object({
   kind: z.enum(["cat", "dog"]).optional(),
@@ -107,3 +112,14 @@ export const DeletePetsByIdInput = z.object({
   id: z.number().int(),
 });
 export type DeletePetsByIdInput = z.infer<typeof DeletePetsByIdInput>;
+
+export const GetPetsByIdEventsInput = z.object({
+  id: z.number().int(),
+});
+export type GetPetsByIdEventsInput = z.infer<typeof GetPetsByIdEventsInput>;
+
+export const PostPetsByIdPhotoInput = z.object({
+  id: z.number().int(),
+  body: z.object({ caption: z.string().max(100).describe("Shown under the photo").optional(), extras: z.array(z.instanceof(Blob)).optional(), photo: z.instanceof(Blob).describe("JPEG or PNG"), tag: z.array(z.string()).optional() }),
+});
+export type PostPetsByIdPhotoInput = z.infer<typeof PostPetsByIdPhotoInput>;

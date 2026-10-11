@@ -16,6 +16,7 @@ type output struct {
 	body    []int
 	status  []int
 	headers []headerField
+	stream  bool // Out is a Stream; typ is the item type
 }
 
 type headerField struct {
@@ -33,6 +34,14 @@ var (
 
 func newOutput(t reflect.Type) (*output, error) {
 	o := &output{typ: t}
+	if t.Implements(streamerType) {
+		o.stream = true
+		o.typ = reflect.Zero(t).Interface().(streamer).streamItem()
+		if o.typ.Implements(reflect.TypeFor[eventer]()) {
+			o.typ = o.typ.Field(2).Type // Event.Data
+		}
+		return o, nil
+	}
 	if t.Kind() != reflect.Struct {
 		return o, nil
 	}
@@ -56,6 +65,9 @@ func newOutput(t reflect.Type) (*output, error) {
 		}
 		switch {
 		case f.Name == "Body":
+			if f.Type.Implements(streamerType) {
+				return nil, fmt.Errorf("output type %s: Body is a Stream; return the Stream itself, headers cannot be combined with a stream", t)
+			}
 			o.body = f.Index
 			o.typ = f.Type
 		case f.Name == "Status":

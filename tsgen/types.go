@@ -56,6 +56,9 @@ func (g *generator) baseType(s *openapi.Schema) string {
 	}
 	switch s.Type {
 	case "string":
+		if s.Format == "binary" {
+			return "Blob"
+		}
 		return "string"
 	case "integer", "number":
 		return "number"

@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -64,6 +67,33 @@ func e2eApp() *App {
 		delete(pets, in.ID)
 		return struct{}{}, nil
 	}, Status(http.StatusNoContent))
+	Post(app, "/pets/{id}/photo", func(_ context.Context, in struct {
+		ID      int                   `path:"id"`
+		Photo   *multipart.FileHeader `form:"photo" validate:"required"`
+		Caption string                `form:"caption"`
+	}) (map[string]any, error) {
+		f, err := in.Photo.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		content, err := io.ReadAll(f)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": in.ID, "name": in.Photo.Filename, "content": string(content), "caption": in.Caption}, nil
+	})
+	Get(app, "/ticks", func(_ context.Context, in struct {
+		Count int `query:"count" default:"3"`
+	}) (Stream[Event[e2ePet]], error) {
+		return func(yield func(Event[e2ePet]) bool) {
+			for i := range in.Count {
+				if !yield(Event[e2ePet]{Name: "pet", ID: strconv.Itoa(i), Data: e2ePet{ID: i, Name: "t" + strconv.Itoa(i)}}) {
+					return
+				}
+			}
+		}, nil
+	})
 	Get(app, "/boom", func(context.Context, struct{}) (struct{}, error) {
 		return struct{}{}, errors.New("database down")
 	})
@@ -134,6 +164,20 @@ out.anonymous = !anonymous.ok && { status: anonymous.status, code: anonymous.err
 const boom = await api.getBoom();
 out.boom = !boom.ok && { status: boom.status, code: boom.error.code, detail: boom.error.detail };
 
+const photo = await api.postPetsByIdPhoto({ id: 3, body: { photo: new File(["hello"], "cat.txt", { type: "text/plain" }), caption: "a cat" } });
+out.photo = photo.ok && photo.data;
+
+// @ts-expect-error photo is required
+const noPhoto = await api.postPetsByIdPhoto({ id: 3, body: { caption: "none" } });
+out.noPhoto = !noPhoto.ok && noPhoto.error.code === "validation_failed" && noPhoto.error.errors;
+
+const ticks = await api.getTicks({ count: 2 });
+if (ticks.ok) {
+  const got = [];
+  for await (const e of ticks.data) got.push(e);
+  out.ticks = { type: ticks.response.headers.get("content-type"), events: got };
+}
+
 try {
   await api.getTeapot();
   out.teapot = "no error";
@@ -182,6 +226,12 @@ const e2eWant = `{
   "me": {"user": "admin"},
   "anonymous": {"status": 401, "code": "unauthorized"},
   "boom": {"status": 500, "code": "internal"},
+  "photo": {"id": 3, "name": "cat.txt", "content": "hello", "caption": "a cat"},
+  "noPhoto": [{"location": "form.photo", "message": "is required"}],
+  "ticks": {"type": "text/event-stream", "events": [
+    {"data": {"id": 0, "name": "t0"}, "event": "pet", "id": "0"},
+    {"data": {"id": 1, "name": "t1"}, "event": "pet", "id": "1"}
+  ]},
   "teapot": {"status": 418, "error": "short and stout", "message": "HTTP 418", "name": "ApiError"},
   "unwrapped": {"status": 404, "message": "pet 9 not found"}
 }`
