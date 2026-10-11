@@ -13,7 +13,7 @@ import (
 )
 
 func testApp(now func() time.Time) (*httptest.Server, func()) {
-	hash, _ := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.DefaultCost)
 	a := &auth{
 		users:  map[string]User{"ada": {ID: "ada", Name: "Ada Lovelace"}},
 		hashes: map[string][]byte{"ada": hash},

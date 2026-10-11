@@ -46,7 +46,7 @@ type auth struct {
 }
 
 // dummyHash keeps the login timing the same for unknown users.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("unknown"), bcrypt.MinCost)
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("unknown"), bcrypt.DefaultCost)
 
 type loginInput struct {
 	Body struct {
