@@ -67,6 +67,7 @@ type step struct {
 	name    string
 	display string
 	loc     string
+	path    string // the Go field path, such as "Paging.Limit"
 	index   []int
 	set     setter
 	slice   bool
@@ -187,7 +188,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 				return fmt.Errorf("field %s: default is not supported on files; remove the default tag", goPath)
 			}
 			p.hasFile = true
-			p.steps = append(p.steps, step{src: src, field: f, name: name, display: display, loc: "form." + display, index: idx, slice: ft == filesType, file: true})
+			p.steps = append(p.steps, step{src: src, field: f, name: name, display: display, loc: "form." + display, path: goPath, index: idx, slice: ft == filesType, file: true})
 			p.locations[goPath] = "form." + display
 			continue
 		}
@@ -203,7 +204,7 @@ func (p *Plan) walk(t reflect.Type, index []int, goPrefix string, seen map[strin
 			return fmt.Errorf("field %s: %w; use a string, bool, number, time.Time, a type implementing encoding.TextUnmarshaler, or *multipart.FileHeader in a form", goPath, err)
 		}
 
-		s := step{src: src, field: f, name: name, display: display, loc: sources[src].prefix + "." + display, index: idx, set: set, slice: isSlice}
+		s := step{src: src, field: f, name: name, display: display, loc: sources[src].prefix + "." + display, path: goPath, index: idx, set: set, slice: isSlice}
 		if d, ok := f.Tag.Lookup("default"); ok {
 			if isSlice {
 				return fmt.Errorf("field %s: default is not supported on slices; remove the default tag", goPath)
@@ -247,10 +248,12 @@ func (p *Plan) HasForm() (form, files bool) { return p.hasForm, p.hasFile }
 
 // Param describes one bound request value.
 type Param struct {
-	In    string
-	Name  string
-	Field reflect.StructField
-	File  bool // a form field holding one or more uploaded files
+	In       string
+	Name     string
+	Field    reflect.StructField
+	File     bool   // a form field holding one or more uploaded files
+	Index    []int  // the field's index path from the input type
+	Location string // the request location, such as "query.limit"
 }
 
 // Params returns the plan's path, query, header, and cookie values in field
@@ -259,7 +262,7 @@ func (p *Plan) Params() []Param {
 	var params []Param
 	for _, s := range p.steps {
 		if s.src != srcForm {
-			params = append(params, Param{In: sources[s.src].tag, Name: s.display, Field: s.field})
+			params = append(params, Param{In: sources[s.src].tag, Name: s.display, Field: s.field, Index: s.index, Location: s.loc})
 		}
 	}
 	return params
@@ -270,7 +273,7 @@ func (p *Plan) FormFields() []Param {
 	var fields []Param
 	for _, s := range p.steps {
 		if s.src == srcForm {
-			fields = append(fields, Param{In: "form", Name: s.display, Field: s.field, File: s.file})
+			fields = append(fields, Param{In: "form", Name: s.display, Field: s.field, File: s.file, Index: s.index, Location: s.loc})
 		}
 	}
 	return fields

@@ -187,6 +187,10 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
 	check := hasValidateTags(t, map[reflect.Type]bool{})
+	checks, compiled := compileChecks(t, plan)
+	if compiled && len(checks) == 0 {
+		check = false // nothing to validate at all
+	}
 	locs := plan.Locations()
 	prefix := ""
 	if t.Name() != "" {
@@ -202,9 +206,17 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 	hasForm, _ := plan.HasForm()
 	// Inputs are pooled: binding and validation need a pointer, which would
 	// otherwise move every request's input to the heap. The handler gets a
-	// copy, so the pooled value is never shared.
+	// copy, so the pooled value is never shared. An input with nothing to
+	// bind skips all of that.
 	inputs := sync.Pool{New: func() any { return new(In) }}
+	noInput := len(plan.Params()) == 0 && !plan.HasBody() && !hasForm
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if noInput {
+			var in In
+			res, err := h(req.Context(), in)
+			a.finish(w, req, rt, out, cfg.status, res, err)
+			return
+		}
 		inp := inputs.Get().(*In)
 		*inp = *new(In)
 		defer inputs.Put(inp)
@@ -227,41 +239,19 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 			return
 		}
 		if check {
-			if details := a.validateInput(inp, prefix, locs); details != nil {
+			var details []ErrorDetail
+			if compiled {
+				details = runChecks(reflect.ValueOf(inp), checks)
+			} else {
+				details = a.validateInput(inp, prefix, locs)
+			}
+			if details != nil {
 				a.respond(w, req, &Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed", Errors: details})
 				return
 			}
 		}
 		res, err := h(req.Context(), *inp)
-		if err != nil {
-			a.writeError(w, req, err, rt)
-			return
-		}
-		if out.stream {
-			if err := any(res).(streamer).serve(w, req, cfg.status); err != nil {
-				a.writeError(w, req, err, rt)
-			}
-			return
-		}
-		if !out.wrapped() {
-			a.writeJSON(w, req, rt, cfg.status, res)
-			return
-		}
-		status, headers, body, err := out.split(res, cfg.status)
-		if err != nil {
-			a.writeError(w, req, err, rt)
-			return
-		}
-		if status < 200 || status > 399 {
-			a.writeError(w, req, fmt.Errorf("output Status %d is not a 2xx or 3xx code; return an error for failures", status), rt)
-			return
-		}
-		for i, values := range headers {
-			for _, v := range values {
-				w.Header().Add(out.headers[i].name, v)
-			}
-		}
-		a.writeJSON(w, req, rt, status, body)
+		a.finish(w, req, rt, out, cfg.status, res, err)
 	})
 	mws := slices.Concat(r.middleware(), cfg.middleware)
 	if err := register(a.mux, name, chain(mws, handler)); err != nil {
@@ -271,6 +261,44 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
 }
+
+// finish sends the handler's result: an error, a stream, a wrapped output
+// with status and headers, or a JSON body.
+func (a *App) finish(w http.ResponseWriter, req *http.Request, rt *route, out *output, status int, res any, err error) {
+	if err != nil {
+		a.writeError(w, req, err, rt)
+		return
+	}
+	if out.stream {
+		if err := res.(streamer).serve(w, req, status); err != nil {
+			a.writeError(w, req, err, rt)
+		}
+		return
+	}
+	if !out.wrapped() {
+		a.writeJSON(w, req, rt, status, res)
+		return
+	}
+	status, headers, body, err := out.split(res, status)
+	if err != nil {
+		a.writeError(w, req, err, rt)
+		return
+	}
+	if status < 200 || status > 399 {
+		a.writeError(w, req, fmt.Errorf("output Status %d is not a 2xx or 3xx code; return an error for failures", status), rt)
+		return
+	}
+	for i, values := range headers {
+		for _, v := range values {
+			w.Header().Add(out.headers[i].name, v)
+		}
+	}
+	a.writeJSON(w, req, rt, status, body)
+}
+
+// jsonContentType is shared between responses. Its length equals its
+// capacity, so a later Header.Add copies rather than writes into it.
+var jsonContentType = []string{"application/json"}
 
 // documentedErrors lists the errors an operation documents: tack's own, a
 // 401 when the route has security, and the ones declared with Errors.
@@ -359,7 +387,7 @@ func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, rt *route, statu
 	}
 	b := e.buf.Bytes()
 	b = b[:len(b)-1] // Encode ends with a newline.
-	w.Header().Set("Content-Type", "application/json")
+	w.Header()["Content-Type"] = jsonContentType
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
 	if e.buf.Cap() <= maxPooledBuffer {

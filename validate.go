@@ -122,25 +122,30 @@ func checkDive(t reflect.Type, path string, seen map[reflect.Type]bool) error {
 }
 
 func message(fe validator.FieldError) string {
-	p := fe.Param()
-	switch fe.Tag() {
+	return ruleMessage(fe.Tag(), fe.Param(), fe.Kind())
+}
+
+// ruleMessage is the message for a failed rule, shared by the validator
+// path and the compiled checks so both say the same thing.
+func ruleMessage(tag, p string, kind reflect.Kind) string {
+	switch tag {
 	case "required", "required_if", "required_unless", "required_with", "required_without":
 		return "is required"
 	case "min", "gte":
-		return size(fe.Kind(), "at least", p)
+		return size(kind, "at least", p)
 	case "max", "lte":
-		return size(fe.Kind(), "at most", p)
+		return size(kind, "at most", p)
 	case "gt":
-		return size(fe.Kind(), "more than", p)
+		return size(kind, "more than", p)
 	case "lt":
-		return size(fe.Kind(), "less than", p)
+		return size(kind, "less than", p)
 	case "eq":
-		if fe.Kind() == reflect.String {
+		if kind == reflect.String {
 			return "must equal " + p
 		}
-		return size(fe.Kind(), "exactly", p)
+		return size(kind, "exactly", p)
 	case "len":
-		return size(fe.Kind(), "exactly", p)
+		return size(kind, "exactly", p)
 	case "email":
 		return "must be a valid email address"
 	case "url", "http_url":
@@ -150,7 +155,7 @@ func message(fe validator.FieldError) string {
 	case "oneof":
 		return "must be one of: " + strings.Join(strings.Fields(p), ", ")
 	}
-	return fmt.Sprintf("failed the %q rule", fe.Tag())
+	return fmt.Sprintf("failed the %q rule", tag)
 }
 
 func size(k reflect.Kind, rel, p string) string {
