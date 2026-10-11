@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The `ShutdownTimeout` constant is replaced by `Config.ShutdownTimeout`, whose zero value keeps the ten seconds (DESIGN.md D11.1). Migration: delete references to `tack.ShutdownTimeout`, or set `tack.Config{ShutdownTimeout: 10 * time.Second}` where the value was read.
 
+### Added
+
+- `FUTURE_FIT.md` and `internal/futurefit`: the planned add-ons (API versioning, typed pagination, WebSocket, tackdb, tackcache, tackauth) written against the v0.9 API as compiling, running sketches. All six fit without changing an exported identifier; the extension points they would like are listed as additive (DESIGN.md D12).
+
 ## [0.6.3] - 2026-10-11
 
 A hardening release: no public API changes.
