@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ matrix.go }}
+      - name: Install TypeScript for the client end-to-end test
+        run: npm install -g typescript@5.9.3
       - name: Build
         run: go build ./...
       - name: Vet
@@ -95,6 +97,12 @@ jobs:
         run: |
           go mod tidy
           go build ./...
+      - name: Check the committed tack client against the served document
+        run: go run ./cmd/tack check -spec petstore.json examples/petstore/client/api.ts
+      - name: Type-check the tack client
+        run: |
+          npm install -g typescript@5.9.3
+          tsc --strict --noEmit --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom examples/petstore/client/api.ts
 
   vulncheck:
     name: Vulnerability check
