@@ -138,6 +138,20 @@ func (r *Registry) SchemaAs(t reflect.Type, name string) (*openapi.Schema, error
 	return r.Schema(t)
 }
 
+// Define registers a hand-built schema under name and returns a $ref to it.
+// Defining the same name again with an equal schema is fine; a different
+// schema is an error.
+func (r *Registry) Define(name string, s *openapi.Schema) (*openapi.Schema, error) {
+	if old, taken := r.schemas[name]; taken {
+		if !reflect.DeepEqual(old, s) {
+			return nil, fmt.Errorf("schema %q is already defined differently", name)
+		}
+		return &openapi.Schema{Ref: ref(name)}, nil
+	}
+	r.schemas[name] = s
+	return &openapi.Schema{Ref: ref(name)}, nil
+}
+
 func (r *Registry) named(t reflect.Type, build func() (*openapi.Schema, error)) (*openapi.Schema, error) {
 	if name, ok := r.names[t]; ok {
 		return &openapi.Schema{Ref: ref(name)}, nil

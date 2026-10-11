@@ -280,3 +280,22 @@ func TestFieldRules(t *testing.T) {
 		t.Errorf("ambiguous fields should be dropped: %v", r.Schemas()["Ambiguous"].Properties)
 	}
 }
+
+func TestDefine(t *testing.T) {
+	r := NewRegistry()
+	s := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{"code": {Type: "string", Enum: []any{"x"}}}}
+	ref, err := r.Define("XProblem", s)
+	if err != nil || ref.Ref != "#/components/schemas/XProblem" {
+		t.Fatalf("got %v, %v", ref, err)
+	}
+	same := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{"code": {Type: "string", Enum: []any{"x"}}}}
+	if _, err := r.Define("XProblem", same); err != nil {
+		t.Fatalf("equal schema should be accepted: %v", err)
+	}
+	if _, err := r.Define("XProblem", &openapi.Schema{Type: "string"}); err == nil || !strings.Contains(err.Error(), `schema "XProblem" is already defined differently`) {
+		t.Fatalf("want conflict error, got %v", err)
+	}
+	if len(r.Schemas()) != 1 {
+		t.Fatalf("schemas = %d, want 1", len(r.Schemas()))
+	}
+}

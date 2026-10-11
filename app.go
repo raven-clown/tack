@@ -71,6 +71,7 @@ type App struct {
 	doc      *openapi.Document
 	spec     []byte
 	opIDs    map[string]string
+	codes    map[string]int
 }
 
 // New returns an App configured by c. It panics when c.Security holds an

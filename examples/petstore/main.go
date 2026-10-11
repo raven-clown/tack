@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/raven-clown/tack"
 )
+
+// ErrPetNotFound is returned when no pet has the requested ID.
+var ErrPetNotFound = tack.DefineError(http.StatusNotFound, "pet_not_found", "pet not found")
 
 // Pet is a pet in the store.
 type Pet struct {
@@ -44,6 +48,12 @@ type createInput struct {
 	Body PetInput
 }
 
+// createOutput adds a Location header to the created pet.
+type createOutput struct {
+	Location string `header:"Location" doc:"URL of the new pet"`
+	Body     Pet
+}
+
 type updateInput struct {
 	ID   int `path:"id" validate:"min=1"`
 	Body PetInput
@@ -70,25 +80,25 @@ func (s *store) get(_ context.Context, in idInput) (Pet, error) {
 	defer s.mu.Unlock()
 	p, ok := s.pets[in.ID]
 	if !ok {
-		return Pet{}, tack.NewError(http.StatusNotFound, "pet not found")
+		return Pet{}, ErrPetNotFound
 	}
 	return p, nil
 }
 
-func (s *store) create(_ context.Context, in createInput) (Pet, error) {
+func (s *store) create(_ context.Context, in createInput) (createOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nextID++
 	p := Pet{ID: s.nextID, Name: in.Body.Name, Kind: in.Body.Kind}
 	s.pets[p.ID] = p
-	return p, nil
+	return createOutput{Location: fmt.Sprintf("/pets/%d", p.ID), Body: p}, nil
 }
 
 func (s *store) update(_ context.Context, in updateInput) (Pet, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.pets[in.ID]; !ok {
-		return Pet{}, tack.NewError(http.StatusNotFound, "pet not found")
+		return Pet{}, ErrPetNotFound.WithDetail(fmt.Sprintf("pet %d not found", in.ID))
 	}
 	p := Pet{ID: in.ID, Name: in.Body.Name, Kind: in.Body.Kind}
 	s.pets[p.ID] = p
@@ -99,7 +109,7 @@ func (s *store) delete(_ context.Context, in idInput) (struct{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.pets[in.ID]; !ok {
-		return struct{}{}, tack.NewError(http.StatusNotFound, "pet not found")
+		return struct{}{}, ErrPetNotFound
 	}
 	delete(s.pets, in.ID)
 	return struct{}{}, nil
@@ -108,12 +118,13 @@ func (s *store) delete(_ context.Context, in idInput) (struct{}, error) {
 func newApp() *tack.App {
 	s := &store{pets: map[int]Pet{}}
 	app := tack.New(tack.Config{Title: "Pet Store", Version: "1.0.0", Description: "A small CRUD API built with tack."})
-	pets := tack.Tags("pets")
-	tack.Get(app, "/pets", s.list, tack.Summary("List pets"), pets)
-	tack.Get(app, "/pets/{id}", s.get, tack.Summary("Get a pet"), pets)
-	tack.Post(app, "/pets", s.create, tack.Summary("Create a pet"), tack.Status(http.StatusCreated), pets)
-	tack.Put(app, "/pets/{id}", s.update, tack.Summary("Update a pet"), pets)
-	tack.Delete(app, "/pets/{id}", s.delete, tack.Summary("Delete a pet"), tack.Status(http.StatusNoContent), pets)
+	pets := app.Group("/pets").With(tack.Tags("pets"))
+	one := pets.With(tack.Errors(ErrPetNotFound))
+	tack.Get(pets, "", s.list, tack.Summary("List pets"))
+	tack.Post(pets, "", s.create, tack.Summary("Create a pet"), tack.Status(http.StatusCreated))
+	tack.Get(one, "/{id}", s.get, tack.Summary("Get a pet"))
+	tack.Put(one, "/{id}", s.update, tack.Summary("Update a pet"))
+	tack.Delete(one, "/{id}", s.delete, tack.Summary("Delete a pet"), tack.Status(http.StatusNoContent))
 	return app
 }
 

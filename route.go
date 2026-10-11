@@ -11,9 +11,11 @@ import (
 	"strings"
 
 	"github.com/raven-clown/tack/internal/bind"
+	"github.com/raven-clown/tack/openapi"
 )
 
-// RouteOption configures a single route.
+// RouteOption configures a single route, or every route of a group through
+// Group.With.
 type RouteOption func(*routeConfig)
 
 type routeConfig struct {
@@ -24,6 +26,14 @@ type routeConfig struct {
 	operationID string
 	deprecated  bool
 	middleware  []func(http.Handler) http.Handler
+	security    []openapi.SecurityRequirement
+	errs        []*Error
+}
+
+// route is what a registered handler knows about itself at request time.
+type route struct {
+	name     string
+	declared map[string]bool
 }
 
 // Status sets the status code of successful responses. The default is 200.
@@ -62,11 +72,34 @@ func Middleware(mw ...func(http.Handler) http.Handler) RouteOption {
 	return func(c *routeConfig) { c.middleware = append(c.middleware, mw...) }
 }
 
+// Security declares that the route needs the named scheme from
+// Config.Security, with the given scopes. Several Security options mean any
+// one of them is enough. The route documents a 401 response; checking the
+// credentials is up to middleware, which can answer with ErrUnauthorized.
+func Security(name string, scopes ...string) RouteOption {
+	if scopes == nil {
+		scopes = []string{}
+	}
+	return func(c *routeConfig) {
+		c.security = append(c.security, openapi.SecurityRequirement{name: scopes})
+	}
+}
+
+// Errors declares the typed errors, made with DefineError, that the route can
+// return. Each appears in the OpenAPI document under its status with its code,
+// next to the validation and internal errors every route has.
+func Errors(errs ...*Error) RouteOption {
+	return func(c *routeConfig) { c.errs = append(c.errs, errs...) }
+}
+
 // Get registers h for GET requests to path. In and Out are inferred from h.
 //
 // In must be a struct whose fields use path, query, header, or cookie tags, or
-// a field named Body for the JSON body. Out is encoded as JSON. Get panics if
-// In does not match path.
+// a field named Body for the JSON body. Out is encoded as JSON, unless it is a
+// struct with a field named Body: then Body is encoded, an int field named
+// Status overrides the status code when not zero, and header-tagged fields
+// become response headers. Get panics if In does not match path or Out is
+// not a valid output type.
 func Get[In, Out any](r Router, path string, h func(context.Context, In) (Out, error), opts ...RouteOption) {
 	handle(r, http.MethodGet, path, h, opts)
 }
@@ -99,9 +132,9 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		}
 		path = prefix + path
 	}
-	route := method + " " + path
+	name := method + " " + path
 	if h == nil {
-		panic(fmt.Sprintf("tack: %s: handler is nil", route))
+		panic(fmt.Sprintf("tack: %s: handler is nil", name))
 	}
 
 	cfg := routeConfig{status: http.StatusOK}
@@ -109,24 +142,39 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		o(&cfg)
 	}
 	if cfg.status < 200 || cfg.status > 399 {
-		panic(fmt.Sprintf("tack: %s: Status(%d) must be a 2xx or 3xx code", route, cfg.status))
+		panic(fmt.Sprintf("tack: %s: Status(%d) must be a 2xx or 3xx code", name, cfg.status))
+	}
+	for _, s := range cfg.security {
+		for scheme := range s {
+			if _, ok := a.security[scheme]; !ok {
+				panic(fmt.Sprintf("tack: %s: Security(%q) names a scheme that is not in Config.Security; add it there with tack.Bearer, tack.APIKey, or tack.Basic", name, scheme))
+			}
+		}
+	}
+	for _, e := range cfg.errs {
+		if e == nil || e.Code == "" || !validStatus(e.Status) {
+			panic(fmt.Sprintf("tack: %s: Errors needs errors made with tack.DefineError, got %v", name, e))
+		}
 	}
 
-	out := reflect.TypeFor[Out]()
-	if noBody(cfg.status) && out != reflect.TypeFor[struct{}]() {
-		panic(fmt.Sprintf("tack: %s: Status(%d) sends no body, but the handler returns %s; return struct{} instead", route, cfg.status, out))
+	out, err := newOutput(reflect.TypeFor[Out]())
+	if err != nil {
+		panic(fmt.Sprintf("tack: %s: %v", name, err))
+	}
+	if noBody(cfg.status) && out.typ != reflect.TypeFor[struct{}]() {
+		panic(fmt.Sprintf("tack: %s: Status(%d) sends no body, but the handler returns %s; return struct{} instead", name, cfg.status, out.typ))
 	}
 	if !strings.HasPrefix(path, "/") {
-		panic(fmt.Sprintf("tack: %s: path must start with \"/\"", route))
+		panic(fmt.Sprintf("tack: %s: path must start with \"/\"", name))
 	}
 
 	t := reflect.TypeFor[In]()
 	plan, err := bind.New(t, bind.PathParams(path))
 	if err != nil {
-		panic(fmt.Sprintf("tack: %s: %v", route, err))
+		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
 	if err := checkDive(t, "", map[reflect.Type]bool{}); err != nil {
-		panic(fmt.Sprintf("tack: %s: %v", route, err))
+		panic(fmt.Sprintf("tack: %s: %v", name, err))
 	}
 	check := hasValidateTags(t, map[reflect.Type]bool{})
 	locs := plan.Locations()
@@ -135,34 +183,53 @@ func handle[In, Out any](r Router, method, path string, h func(context.Context, 
 		prefix = t.Name() + "."
 	}
 
+	rt := &route{name: name, declared: map[string]bool{}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var in In
 		if plan.HasBody() {
 			req.Body = http.MaxBytesReader(w, req.Body, a.maxBody)
 		}
 		if err := plan.Bind(req, &in); err != nil {
-			writeBindError(w, err)
+			a.writeBindError(w, req, err)
 			return
 		}
 		if check {
 			if details := a.validateInput(&in, prefix, locs); details != nil {
-				writeProblem(w, &Error{Status: http.StatusUnprocessableEntity, Detail: "validation failed", Errors: details})
+				a.respond(w, req, &Error{Status: http.StatusUnprocessableEntity, Code: codeValidation, Detail: "validation failed", Errors: details})
 				return
 			}
 		}
 		res, err := h(req.Context(), in)
 		if err != nil {
-			a.writeError(w, req, route, err)
+			a.writeError(w, req, err, rt)
 			return
 		}
-		a.writeJSON(w, req, route, cfg.status, res)
+		if !out.wrapped() {
+			a.writeJSON(w, req, rt, cfg.status, res)
+			return
+		}
+		status, headers, body := out.split(res, cfg.status)
+		if status < 200 || status > 599 {
+			a.writeError(w, req, fmt.Errorf("output Status %d is not a valid HTTP status", status), rt)
+			return
+		}
+		for i, values := range headers {
+			for _, v := range values {
+				w.Header().Add(out.headers[i].name, v)
+			}
+		}
+		a.writeJSON(w, req, rt, status, body)
 	})
 	mws := slices.Concat(r.middleware(), cfg.middleware)
-	if err := register(a.mux, route, chain(mws, handler)); err != nil {
-		panic(fmt.Sprintf("tack: %s: %v; wildcards must be whole segments like {id}, and each method and path can be registered once", route, err))
+	if err := register(a.mux, name, chain(mws, handler)); err != nil {
+		panic(fmt.Sprintf("tack: %s: %v; wildcards must be whole segments like {id}, and each method and path can be registered once", name, err))
 	}
-	if err := a.addOperation(method, path, plan, out, cfg); err != nil {
-		panic(fmt.Sprintf("tack: %s: %v", route, err))
+	codes, err := a.addOperation(method, path, plan, out, cfg)
+	if err != nil {
+		panic(fmt.Sprintf("tack: %s: %v", name, err))
+	}
+	for _, c := range codes {
+		rt.declared[c] = true
 	}
 }
 
@@ -181,27 +248,34 @@ func noBody(status int) bool {
 	return status == http.StatusNoContent || status == http.StatusResetContent || status == http.StatusNotModified
 }
 
-func writeBindError(w http.ResponseWriter, err error) {
+var bindCodes = map[int]string{
+	http.StatusBadRequest:            codeMalformed,
+	http.StatusRequestEntityTooLarge: codeTooLarge,
+	http.StatusUnsupportedMediaType:  codeMediaType,
+	http.StatusUnprocessableEntity:   codeValidation,
+}
+
+func (a *App) writeBindError(w http.ResponseWriter, r *http.Request, err error) {
 	var be *bind.Error
 	if !errors.As(err, &be) {
-		writeProblem(w, &Error{Status: http.StatusBadRequest, Detail: err.Error()})
+		a.respond(w, r, &Error{Status: http.StatusBadRequest, Code: codeMalformed, Detail: err.Error()})
 		return
 	}
-	e := &Error{Status: be.Status, Detail: be.Detail}
+	e := &Error{Status: be.Status, Code: bindCodes[be.Status], Detail: be.Detail}
 	for _, f := range be.Fields {
 		e.Errors = append(e.Errors, ErrorDetail(f))
 	}
-	writeProblem(w, e)
+	a.respond(w, r, e)
 }
 
-func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, route string, status int, v any) {
+func (a *App) writeJSON(w http.ResponseWriter, r *http.Request, rt *route, status int, v any) {
 	if noBody(status) {
 		w.WriteHeader(status)
 		return
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
-		a.writeError(w, r, route, fmt.Errorf("encoding response: %w", err))
+		a.writeError(w, r, fmt.Errorf("encoding response: %w", err), rt)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

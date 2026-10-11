@@ -44,7 +44,7 @@ func ExampleGet() {
 	serve(app, "GET", "/pets/0", "")
 	// Output:
 	// 200 {"id":7,"name":"Milo"}
-	// 422 {"type":"about:blank","title":"Unprocessable Entity","status":422,"detail":"validation failed","errors":[{"location":"path.id","message":"must be at least 1"}]}
+	// 422 {"type":"about:blank","title":"Unprocessable Entity","status":422,"code":"validation_failed","detail":"validation failed","errors":[{"location":"path.id","message":"must be at least 1"}]}
 }
 
 func ExamplePost() {
@@ -62,7 +62,7 @@ func ExamplePost() {
 	serve(app, "POST", "/pets", `{"name":""}`)
 	// Output:
 	// 201 {"id":1,"name":"Rex"}
-	// 422 {"type":"about:blank","title":"Unprocessable Entity","status":422,"detail":"validation failed","errors":[{"location":"body.name","message":"is required"}]}
+	// 422 {"type":"about:blank","title":"Unprocessable Entity","status":422,"code":"validation_failed","detail":"validation failed","errors":[{"location":"body.name","message":"is required"}]}
 }
 
 func ExampleNewError() {

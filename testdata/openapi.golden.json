@@ -53,6 +53,72 @@
         ],
         "type": "object"
       },
+      "AnimalNotFoundProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "animal_not_found"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "animal not found"
+      },
+      "AnimalRetiredProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "animal_retired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "animal has retired"
+      },
+      "BodyTooLargeProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "body_too_large"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "request body too large"
+      },
       "ErrorDetail": {
         "properties": {
           "location": {
@@ -67,6 +133,72 @@
           "message"
         ],
         "type": "object"
+      },
+      "InternalProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "internal"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "internal error"
+      },
+      "MalformedRequestProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "malformed_request"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "malformed request"
+      },
+      "NameTakenProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "name_taken"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "another animal has this name"
       },
       "Owner": {
         "properties": {
@@ -85,6 +217,9 @@
       },
       "ProblemDetails": {
         "properties": {
+          "code": {
+            "type": "string"
+          },
           "detail": {
             "type": "string"
           },
@@ -114,6 +249,88 @@
           "status"
         ],
         "type": "object"
+      },
+      "UnauthorizedProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "unauthorized"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "authentication required"
+      },
+      "UnsupportedMediaTypeProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "unsupported_media_type"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "content type is not JSON"
+      },
+      "ValidationFailedProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "code": {
+                "enum": [
+                  "validation_failed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "validation failed"
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "basic": {
+        "scheme": "basic",
+        "type": "http"
+      },
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
       }
     }
   },
@@ -145,13 +362,253 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
             "description": "Internal Server Error"
           }
         }
+      }
+    },
+    "/admin/animals": {
+      "post": {
+        "operationId": "postAdminAnimals",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Animal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Animal"
+                }
+              }
+            },
+            "description": "Created",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "URL of the new animal",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Warning": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "X-Count": {
+                "required": true,
+                "schema": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "X-Since": {
+                "required": true,
+                "schema": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedProblem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameTakenProblem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyTooLargeProblem"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsupportedMediaTypeProblem"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalProblem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "admin"
+            ]
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/animals/{id}": {
+      "get": {
+        "operationId": "getAdminAnimalsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Animal"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedProblem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimalNotFoundProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnimalRetiredProblem"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalProblem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "admin"
+            ]
+          },
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/files/{path}": {
@@ -197,7 +654,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -207,7 +664,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/BodyTooLargeProblem"
                 }
               }
             },
@@ -217,7 +674,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/UnsupportedMediaTypeProblem"
                 }
               }
             },
@@ -227,7 +684,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -237,7 +694,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
@@ -310,7 +767,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -320,7 +777,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -330,7 +787,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
@@ -370,7 +827,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -380,7 +837,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/BodyTooLargeProblem"
                 }
               }
             },
@@ -390,7 +847,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/UnsupportedMediaTypeProblem"
                 }
               }
             },
@@ -400,7 +857,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -410,7 +867,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
@@ -445,7 +902,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -455,7 +912,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -465,7 +922,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
@@ -503,7 +960,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -513,7 +970,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -523,7 +980,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },
@@ -579,7 +1036,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/MalformedRequestProblem"
                 }
               }
             },
@@ -589,7 +1046,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/BodyTooLargeProblem"
                 }
               }
             },
@@ -599,7 +1056,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/UnsupportedMediaTypeProblem"
                 }
               }
             },
@@ -609,7 +1066,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/ValidationFailedProblem"
                 }
               }
             },
@@ -619,7 +1076,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/InternalProblem"
                 }
               }
             },

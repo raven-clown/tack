@@ -33,14 +33,45 @@ type Animal struct {
 	Nicknames []string  `json:"nicknames,omitempty" validate:"max=3,dive,min=1"`
 }
 
+var (
+	errAnimalNotFound = DefineError(http.StatusNotFound, "animal_not_found", "animal not found")
+	errAnimalRetired  = DefineError(http.StatusNotFound, "animal_retired", "animal has retired")
+	errNameTaken      = DefineError(http.StatusConflict, "name_taken", "another animal has this name")
+)
+
+// createdAnimal is a response with a body, a status, and headers.
+type createdAnimal struct {
+	Status   int
+	Location string    `header:"Location" doc:"URL of the new animal"`
+	Count    int       `header:"X-Count"`
+	ETag     *string   `header:"ETag"`
+	Warnings []string  `header:"Warning"`
+	Since    time.Time `header:"X-Since"`
+	Body     Animal
+}
+
 func specApp() *App {
 	app := New(Config{
 		Title:       "Pet API",
 		Version:     "1.2.3",
 		Description: "Manage pets.",
 		Servers:     []openapi.Server{{URL: "https://api.example.com"}},
+		Security: map[string]openapi.SecurityScheme{
+			"bearer": Bearer("JWT"),
+			"apiKey": APIKey("header", "X-API-Key"),
+			"basic":  Basic(),
+		},
 	})
 	nop := func(context.Context, struct{}) ([]Animal, error) { return nil, nil }
+	admin := app.Group("/admin").With(Security("bearer", "admin"), Security("apiKey"))
+	Post(admin, "/animals", func(context.Context, struct{ Body Animal }) (createdAnimal, error) {
+		return createdAnimal{}, nil
+	}, Status(http.StatusCreated), Errors(errNameTaken), Tags("admin"))
+	Get(admin, "/animals/{id}", func(context.Context, struct {
+		ID int `path:"id"`
+	}) (Animal, error) {
+		return Animal{}, nil
+	}, Errors(errAnimalNotFound, errAnimalRetired, ErrUnauthorized))
 	Get(app, "/pets", func(context.Context, struct {
 		Limit  int      `query:"limit" default:"20" validate:"min=1,max=100" doc:"Page size"`
 		Kind   *string  `query:"kind" validate:"omitempty,oneof=cat dog"`
