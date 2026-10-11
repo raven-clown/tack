@@ -70,6 +70,8 @@ The one accepted exception is `go-playground/validator`, which walks the input v
 /openapi            OpenAPI 3.1 document types
 /tsgen              Generates the TypeScript client and Zod schemas from the OpenAPI document
 /internal/mock      Serves example responses for a document (tack mock)
+/internal/futurefit Compile-checked sketches of the planned add-ons against
+                    the public API (FUTURE_FIT.md)
 /cmd/tack           CLI, one file per subcommand: main.go (dispatch, usage),
                     gen.go (gen, check), spec.go (loading documents), dev.go,
                     mock.go, new.go, version.go; template/ for tack new

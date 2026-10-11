@@ -17,6 +17,7 @@ This file records the design decisions behind tack's public API: the options con
 | D9 | Zod schemas and the dev loop | Zod in a separate file generated from the document; `tack dev` polls files, builds before it restarts, and writes only what changed; `tack mock` answers from schemas and takes `Prefer: code=` for errors | Decided |
 | D10 | Uploads and streams | `form` tags with `*multipart.FileHeader` fields for uploads; `Stream[T]`, an iterator, for server-sent events; `Run`/`Serve` for graceful shutdown | Decided |
 | D11 | The v0.9 API freeze | `Config.ShutdownTimeout` replaces the constant; `Error.Type` stays a plain field; `Stream[T]` stays a named function type through v1.0 | Decided |
+| D12 | Future fit | The planned add-ons fit the v0.9 API; the four extension points they would like are additive and wait for their first user | Decided |
 
 ## Prior art
 
@@ -433,6 +434,24 @@ func init() { ErrPetNotFound.Type = "https://example.com/problems/pet-not-found"
 
 - Deferred: a v2 question, once the standard library's iterator types are what users expect in signatures. Nothing in v1 prevents it.
 
+## D12. Future fit: no extension points before v1.0
+
+`FUTURE_FIT.md` builds each planned add-on (versioning, pagination, WebSocket, tackdb, tackcache, tackauth) from exported identifiers only, under `internal/futurefit`, and all six fit the v0.9 surface.
+
+**A. Ship v0.9 without new extension points; add them when an add-on needs them (chosen)**
+
+- Yes: every gap found is closed by something additive: an option combinator (`Options(opts...)`), a registration hook that hands an option the operation, `App.Handle` for raw handlers, and a `Config` error mapper. Under the v1 compatibility rules a new function, method, or field breaks nobody.
+- Yes: a release candidate should freeze what exists, not guess at what add-ons will want. Each extension point can be shaped by the first add-on that uses it.
+- No: until then, `Require` needs `tack.Errors` next to it and a cache option cannot document its header. Accepted; both are visible in the sketches and in `FUTURE_FIT.md`.
+
+**B. Add the four extension points now**
+
+- No: four more exported identifiers with no user, frozen at v1.0 in whatever shape was guessed.
+
+**C. Make `RouteOption` an interface so add-ons can implement their own options**
+
+- No: it would change an existing identifier for a need the func type already covers, since the unexported config can grow fields and the combinator composes existing options.
+
 ## Decisions
 
 Decided on 2026-10-11. The options marked "chosen" above were accepted as written; the remaining questions were settled as follows.
@@ -486,6 +505,7 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | `ShutdownTimeout` (v0.9) | `Config.ShutdownTimeout`, zero meaning ten seconds; the constant is removed | A constant cannot follow a deployment's shutdown budget, and after v1.0 it could not be removed (D11.1) |
 | `Error.Type` (v0.9) | A plain field; no constructor | The smaller API, and a helper stays possible later (D11.2) |
 | `Stream[T]` (v0.9) | A named function type through v1.0; `iter.Seq[T]` is a v2 question | Route detection depends on its methods; the conversion `Stream[T](seq)` already works (D11.3) |
+| Extension points (v0.9) | None added; `Options`, a registration hook, `App.Handle`, and an error mapper are recorded as additive | A release candidate freezes what exists, and each can be shaped by its first add-on (D12, `FUTURE_FIT.md`) |
 | Fuzz targets (v0.6.3) | Fuzz tests for the query scanner, JSON and form binding, header lists, and path patterns, each run for 20 seconds in CI | They hold the scanners to their contracts (`url.ParseQuery` for queries, a bind `Error` with a 4xx status for bodies) on inputs no table test would list |
 
 ## Prototype
