@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: Pet Store
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      parameters:
+        - name: kind
+          in: query
+          description: Only pets of this kind
+          schema:
+            type: string
+            enum: [cat, dog, bird]
+        - name: limit
+          in: query
+          description: Maximum number of pets
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/Problem"
+  /pets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Pet ID
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      operationId: getPet
+      summary: Get a pet
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: updatePet
+      summary: Update a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+components:
+  schemas:
+    PetKind:
+      type: string
+      enum: [cat, dog, bird]
+    Pet:
+      type: object
+      required: [id, name, kind]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 50
+        kind:
+          $ref: "#/components/schemas/PetKind"
+    PetInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        kind:
+          $ref: "#/components/schemas/PetKind"
+    Problem:
+      type: object
+      required: [status, detail]
+      properties:
+        status:
+          type: integer
+        detail:
+          type: string
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"

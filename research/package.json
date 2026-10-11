@@ -1,0 +1,8 @@
+{
+  "name": "tack-research",
+  "private": true,
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5"
+  }
+}

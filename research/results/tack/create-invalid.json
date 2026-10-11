@@ -1,0 +1,1 @@
+{"type":"about:blank","title":"Unprocessable Entity","status":422,"detail":"validation failed","errors":[{"location":"body.name","message":"is required"},{"location":"body.kind","message":"must be one of: cat, dog, bird"}]}

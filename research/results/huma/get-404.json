@@ -1,0 +1,1 @@
+{"$schema":"http://localhost:8080/schemas/ErrorModel.json","title":"Not Found","status":404,"detail":"pet not found"}

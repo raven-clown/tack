@@ -1,0 +1,139 @@
+definitions:
+  main.Pet:
+    properties:
+      id:
+        type: integer
+      kind:
+        enum:
+        - cat
+        - dog
+        - bird
+        type: string
+      name:
+        type: string
+    type: object
+  main.PetInput:
+    properties:
+      kind:
+        enum:
+        - cat
+        - dog
+        - bird
+        type: string
+      name:
+        maxLength: 50
+        type: string
+    required:
+    - kind
+    - name
+    type: object
+  main.Problem:
+    properties:
+      detail:
+        type: string
+      status:
+        type: integer
+    type: object
+info:
+  contact: {}
+  title: Pet Store
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      parameters:
+      - description: Only pets of this kind
+        enum:
+        - cat
+        - dog
+        - bird
+        in: query
+        name: kind
+        type: string
+      - default: 20
+        description: Maximum number of pets
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Pet'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Problem'
+      summary: List pets
+    post:
+      parameters:
+      - description: Pet
+        in: body
+        name: pet
+        required: true
+        schema:
+          $ref: '#/definitions/main.PetInput'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.Pet'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Problem'
+      summary: Create a pet
+  /pets/{id}:
+    get:
+      parameters:
+      - description: Pet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Pet'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Problem'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Problem'
+      summary: Get a pet
+    put:
+      parameters:
+      - description: Pet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pet
+        in: body
+        name: pet
+        required: true
+        schema:
+          $ref: '#/definitions/main.PetInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Pet'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.Problem'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.Problem'
+      summary: Update a pet
+swagger: "2.0"

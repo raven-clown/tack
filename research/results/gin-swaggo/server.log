@@ -1,0 +1,12 @@
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /pets                     --> main.(*store).list-fm (1 handlers)
+[GIN-debug] GET    /pets/:id                 --> main.(*store).get-fm (1 handlers)
+[GIN-debug] POST   /pets                     --> main.(*store).create-fm (1 handlers)
+[GIN-debug] PUT    /pets/:id                 --> main.(*store).update-fm (1 handlers)
+[GIN-debug] GET    /docs/*any                --> github.com/swaggo/gin-swagger.CustomWrapHandler.func1 (1 handlers)
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080

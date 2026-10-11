@@ -1,0 +1,11 @@
+create-ok              POST /pets                    -> 201
+create-invalid         POST /pets                    -> 422
+create-missing         POST /pets                    -> 422
+create-malformed       POST /pets                    -> 400
+get-ok                 GET /pets/1                  -> 200
+get-404                GET /pets/999                -> 404
+get-bad-id             GET /pets/abc                -> 422
+list-filter            GET /pets?kind=cat           -> 200
+list-bad-limit         GET /pets?limit=500          -> 422
+update-ok              PUT /pets/1                  -> 200
+docs-page              GET /docs                    -> 200

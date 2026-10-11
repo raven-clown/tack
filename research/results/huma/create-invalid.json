@@ -1,0 +1,1 @@
+{"$schema":"http://localhost:8080/schemas/ErrorModel.json","title":"Unprocessable Entity","status":422,"detail":"validation failed","errors":[{"message":"expected value to be one of \"cat, dog, bird\"","location":"body.kind","value":"fish"},{"message":"expected length >= 1","location":"body.name","value":""}]}
