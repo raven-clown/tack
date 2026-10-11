@@ -4,13 +4,13 @@ This file records the design decisions behind tack's public API: the options con
 
 ## Summary
 
-| # | Topic | Recommendation | Status |
+| # | Topic | Decision | Status |
 | --- | --- | --- | --- |
-| D1 | Route declaration and generics | Package-level generic functions on a sealed `Router` interface | Open |
-| D2 | Where the request body lives | A field named `Body` in the input struct | Open |
-| D3 | Status codes and response headers | `tack.Status(code)` route option; output struct with `Body`, `Status`, and `header` fields for dynamic cases | Open |
-| D4 | Errors | `tack.NewError` returning `*tack.Error`, plus one interface for domain errors | Open |
-| D5 | Tags and defaults | `path`, `query`, `header`, `cookie`, `default`; pointers mean optional | Open |
+| D1 | Route declaration and generics | Package-level generic functions on a sealed `Router` interface | Decided |
+| D2 | Where the request body lives | A field named `Body` in the input struct | Decided |
+| D3 | Status codes and response headers | `tack.Status(code)` route option; output struct with `Body`, `Status`, and `header` fields for dynamic cases | Decided |
+| D4 | Errors | `tack.NewError` returning `*tack.Error`, plus one interface for domain errors | Decided |
+| D5 | Tags and defaults | `path`, `query`, `header`, `cookie`, `default`; pointers mean optional | Decided |
 
 ## Prior art
 
@@ -38,7 +38,7 @@ Takeaways for tack:
 
 Go methods cannot have type parameters (Go 1.26 reports `method must have no type parameters`), so `app.Get[In, Out](...)` is not possible.
 
-**A. Package-level generic functions (recommended)**
+**A. Package-level generic functions (chosen)**
 
 ```go
 tack.Get(app, "/pets/{id}", getPet, tack.Summary("Get a pet"))
@@ -78,7 +78,7 @@ Sub-decisions under A:
 
 ## D2. Where the request body lives
 
-**A. Field named `Body` (recommended)**
+**A. Field named `Body` (chosen)**
 
 ```go
 type CreatePetInput struct {
@@ -118,7 +118,7 @@ Under A, a field tagged `body:"..."` could later replace the magic name without 
 
 ## D3. Status codes and response headers
 
-**A. Route option for the default status (recommended for v0.1)**
+**A. Route option for the default status (chosen for v0.1)**
 
 ```go
 tack.Post(app, "/pets", createPet, tack.Status(http.StatusCreated))
@@ -127,7 +127,7 @@ tack.Post(app, "/pets", createPet, tack.Status(http.StatusCreated))
 - ✅ Covers most APIs. The status is known at registration, so OpenAPI documents it.
 - ❌ It can't pick a status at runtime or set headers.
 
-**B. Output struct with `Body`, `Status`, and `header` fields (recommended for v0.3, alongside A)**
+**B. Output struct with `Body`, `Status`, and `header` fields (chosen for v0.3, alongside A)**
 
 ```go
 type CreatePetOutput struct {
@@ -152,7 +152,7 @@ func(ctx context.Context, in CreatePetInput) (tack.Response[Pet], error)
 
 ## D4. Errors
 
-**A. One error type and a constructor (recommended)**
+**A. One error type and a constructor (chosen)**
 
 ```go
 return Pet{}, tack.NewError(http.StatusNotFound, "pet not found")
@@ -195,7 +195,7 @@ In every option, unknown errors become a 500 with no details sent to the client 
 
 **Defaults**
 
-- **A. `default` tag, parsed once at registration (recommended).** A value that can't be parsed panics at startup. It also feeds the OpenAPI `default` keyword.
+- **A. `default` tag, parsed once at registration (chosen).** A value that can't be parsed panics at startup. It also feeds the OpenAPI `default` keyword.
 - **B. A `Defaults()` method on the input type.** Flexible, but OpenAPI cannot see the values.
 - **C. No defaults; use pointers and handle `nil` in the handler.** Less code in tack, more in every handler.
 
@@ -206,15 +206,15 @@ In every option, unknown errors become a 500 with no details sent to the client 
 
 **Untagged exported fields** in an input struct panic at registration, naming the route, the field, and the fix ("add a `query`, `path`, `header`, or `cookie` tag, or name it `Body`"). Unexported fields and fields tagged `-` are ignored.
 
-## Open questions for the maintainer
+## Decisions
 
-1. D1: accept `tack.Get(app, ...)` over method style?
-2. D2: accept the magic `Body` field name?
-3. D3: ship only `tack.Status` in v0.1 and add output structs in v0.3?
-4. D4: is `NewError(status, detail)` plus `HTTPStatus() int` enough, with no per-status helpers?
-5. D5: should unknown JSON fields in the body be rejected with a 400, or ignored like `encoding/json`?
-6. D5: should a missing required header or cookie be a 422 (validation), the same as query values?
-7. Which single selling point goes first in the README: docs that never drift, the TypeScript client, or plain `net/http`?
+Decided on 2026-10-11. The options marked "chosen" above were accepted as written; the remaining questions were settled as follows.
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| Unknown JSON fields in the body | Ignored, as `encoding/json` does | Clients can roll out new fields before servers, and this matches what Go developers expect |
+| Missing required header or cookie | 422, like any other validation failure | One rule for every source; 400 stays reserved for malformed input |
+| Lead selling point | API docs that never drift from the code | Available from v0.2; the TypeScript client (v0.4) builds on the same promise |
 
 ## Prototype
 
