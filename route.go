@@ -351,9 +351,13 @@ func probeValidator(v *validator.Validate, t reflect.Type) (err error) {
 	return nil
 }
 
-// jsonContentType is shared between responses. Its length equals its
-// capacity, so a later Header.Add copies rather than writes into it.
-var jsonContentType = []string{"application/json"}
+// jsonContentType and nosniff are shared between responses. Their length
+// equals their capacity, so a later Header.Add copies rather than writes into
+// them.
+var (
+	jsonContentType = []string{"application/json"}
+	nosniff         = []string{"nosniff"}
+)
 
 // documentedErrors lists the errors an operation documents: tack's own, a
 // 401 when the route has security, and the ones declared with Errors.
@@ -472,7 +476,9 @@ func (e *encoder) send(w http.ResponseWriter, status int) {
 func (e *encoder) sendAs(w http.ResponseWriter, status int, contentType []string) {
 	b := e.buf.Bytes()
 	b = b[:len(b)-1] // Encode ends with a newline.
-	w.Header()["Content-Type"] = contentType
+	h := w.Header()
+	h["Content-Type"] = contentType
+	h["X-Content-Type-Options"] = nosniff
 	w.WriteHeader(status)
 	_, _ = w.Write(b) // #nosec G705 -- JSON under an explicit Content-Type
 	if e.buf.Cap() <= maxPooledBuffer {

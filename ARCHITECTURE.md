@@ -154,7 +154,7 @@ All errors leaving tack are RFC 9457 `application/problem+json` with a `code` me
 | Error implementing `HTTPStatus() int` | that status | none |
 | Any other error from handler | 500, details hidden, logged via `slog` | `internal` |
 
-Every error goes through one path: `problem` maps the handler's error to an `*Error` (keeping the original as its cause), 5xx errors are logged, and then either `Config.ErrorHandler` or the default problem+json writer sends it. Responses and problems share one pool of JSON encoders and set `Content-Type` through a shared slice, so neither allocates for the header. `App.WriteError` exposes that path to middleware. With `Config.Dev`, a handler returning a typed error the route did not declare logs a warning.
+Every error goes through one path: `problem` maps the handler's error to an `*Error` (keeping the original as its cause), 5xx errors are logged, and then either `Config.ErrorHandler` or the default problem+json writer sends it. Responses and problems share one pool of JSON encoders and set `Content-Type` and `X-Content-Type-Options: nosniff` through shared slices, so neither allocates for the headers. `App.WriteError` exposes that path to middleware. With `Config.Dev`, a handler returning a typed error the route did not declare logs a warning.
 
 In the OpenAPI document each declared error code becomes a component named after it, such as `PetNotFoundProblem`: `allOf` of `ProblemDetails` and an object whose `code` is an enum with that one value. A response status lists its codes with `oneOf`. The code to status mapping is tracked per app so one code cannot be documented with two statuses.
 

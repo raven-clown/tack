@@ -2,7 +2,12 @@ package tack
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -89,5 +94,21 @@ func TestSecurityInSpec(t *testing.T) {
 	body := fetch(t, app, "/openapi.json").Body.String()
 	if !strings.Contains(body, `"security":[{"bearer":["read","write"]},{"key":[]}]`) {
 		t.Fatalf("spec JSON: %s", body)
+	}
+}
+
+func TestResponsesAreNosniff(t *testing.T) {
+	app := New(Config{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	Get(app, "/ok", func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil })
+	Get(app, "/fail", func(context.Context, struct{}) (struct{}, error) { return struct{}{}, errors.New("boom") })
+	Get(app, "/events", func(context.Context, struct{}) (Stream[int], error) {
+		return func(yield func(int) bool) { yield(1) }, nil
+	})
+	for _, path := range []string{"/ok", "/fail", "/events", "/openapi.json", "/docs"} {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: X-Content-Type-Options %q", path, got)
+		}
 	}
 }
