@@ -32,7 +32,9 @@ var pets = []Pet{
 func validKind(kind string) bool { return slices.Contains(kinds, kind) }
 
 func listPets(kind string, limit int) []Pet {
-	out := make([]Pet, 0, limit)
+	// The store is fixed, so the result never needs more room than it has,
+	// and the request's limit never reaches the allocation.
+	out := make([]Pet, 0, len(pets))
 	for _, p := range pets {
 		if kind == "" || p.Kind == kind {
 			out = append(out, p)
