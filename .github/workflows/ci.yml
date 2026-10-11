@@ -57,11 +57,20 @@ jobs:
         run: |
           gen() { docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/w" openapitools/openapi-generator-cli:v7.25.0 "$@"; }
           gen validate -i /w/petstore.json
-          gen generate -i /w/petstore.json -g go -o /w/out/go
+          gen generate -i /w/petstore.json -g go -o /w/out/go --git-user-id raven-clown --git-repo-id tack-petclient
           gen generate -i /w/petstore.json -g typescript-fetch -o /w/out/ts
       - name: Build Go client
         working-directory: out/go
         run: |
-          go mod edit -module petclient
           go mod tidy
           go build ./...
+
+  vulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
