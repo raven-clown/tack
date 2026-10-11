@@ -39,3 +39,29 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
+
+  clients:
+    name: Generated clients
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Export petstore spec
+        run: |
+          go run ./examples/petstore &
+          for i in $(seq 60); do curl -sf localhost:8080/openapi.json -o petstore.json && break; sleep 1; done
+          test -s petstore.json
+      - name: Validate and generate
+        run: |
+          gen() { docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/w" openapitools/openapi-generator-cli:v7.25.0 "$@"; }
+          gen validate -i /w/petstore.json
+          gen generate -i /w/petstore.json -g go -o /w/out/go
+          gen generate -i /w/petstore.json -g typescript-fetch -o /w/out/ts
+      - name: Build Go client
+        working-directory: out/go
+        run: |
+          go mod edit -module petclient
+          go mod tidy
+          go build ./...

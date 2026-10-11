@@ -1,0 +1,577 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>How Tack Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one fixed-size vertical card. Same diagram, same rename, six approaches in turn. Every box has a fixed size so nothing shifts between scenes. Single dark look by choice. */
+:root {
+  color-scheme: dark;
+  --bg: #030507;
+  --card: #06090d;
+  --wire: #2a3240;
+  --fg: #eef2f7;
+  --muted: #8a95a8;
+  --dim: #4d5768;
+  --client: #2dd4bf;
+  --tack: #60a5fa;
+  --tool: #a3afc2;
+  --out: #f5a524;
+  --struct: #b4a3ff;
+  --ok: #34d399;
+  --bad: #f87171;
+  --warn: #fbbf24;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--display);
+  padding-inline: 16px;
+  padding-block: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--card);
+  border: 1px solid #10151d;
+  border-radius: 20px;
+  padding-block: 22px 18px;
+  padding-inline: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+h1 { margin: 0; text-align: center; font-weight: 800; font-size: clamp(26px, 7.6vw, 34px); letter-spacing: -.01em; text-transform: uppercase; line-height: 1; }
+.scene-name {
+  height: 18px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scene-name b { color: var(--fg); font-weight: 600; }
+.pills { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 8px; }
+.pill {
+  height: 50px;
+  border: 1px solid #253042;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  transition: border-color .4s;
+}
+.pill span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.pill b {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  padding-inline: 6px;
+  transition: color .3s;
+}
+.pill.good { border-color: rgba(52,211,153,.4); } .pill.good b { color: var(--ok); }
+.pill.bad { border-color: rgba(248,113,113,.45); } .pill.bad b { color: var(--bad); }
+.pill.warn { border-color: rgba(251,191,36,.45); } .pill.warn b { color: var(--warn); }
+.pill.plain b { color: var(--fg); }
+
+svg { width: 100%; height: auto; display: block; }
+.wire { fill: none; stroke: var(--wire); stroke-width: 1.4; transition: stroke .4s, opacity .4s; }
+.wire.dash { stroke-dasharray: 4 5; }
+.wire.redline { stroke: var(--bad); }
+.wire.glow { stroke: rgba(96,165,250,.5); }
+.wire.toolglow { stroke: rgba(163,175,194,.45); }
+.hide { opacity: 0; }
+.nlabel { font-family: var(--display); font-weight: 800; font-size: 11.5px; letter-spacing: .06em; text-anchor: middle; text-transform: uppercase; }
+.nsub { font-family: var(--mono); font-size: 9.5px; text-anchor: middle; fill: var(--muted); transition: fill .3s; }
+.count { font-family: var(--mono); font-weight: 600; font-size: 14px; fill: var(--out); font-variant-numeric: tabular-nums; }
+.icon { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; transition: stroke .3s, filter .3s; }
+.glyph { font-family: var(--mono); font-weight: 600; text-anchor: middle; transition: fill .3s; }
+.n { transition: opacity .4s; }
+.n .icon { stroke: var(--c); }
+.n .glyph, .n .nlabel { fill: var(--c); }
+.n.stale .icon { stroke: var(--bad); } .n.stale .glyph, .n.stale .nsub { fill: var(--bad); }
+.n.pending .icon { stroke: var(--warn); } .n.pending .glyph, .n.pending .nsub { fill: var(--warn); }
+.n.fresh .icon { stroke: var(--tack); filter: drop-shadow(0 0 6px rgba(96,165,250,.8)); } .n.fresh .glyph, .n.fresh .nsub { fill: var(--tack); }
+.n.flash .icon { filter: drop-shadow(0 0 8px var(--c)); }
+.n.okflash .icon { stroke: var(--ok); filter: drop-shadow(0 0 7px rgba(52,211,153,.85)); }
+.n.badflash .icon { stroke: var(--bad); filter: drop-shadow(0 0 8px rgba(248,113,113,.9)); }
+.n.warnflash .icon { stroke: var(--warn); filter: drop-shadow(0 0 8px rgba(251,191,36,.9)); }
+.pkt { filter: url(#pglow); }
+.chip-t { font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-anchor: middle; }
+.stop-t { font-family: var(--mono); font-size: 9px; font-weight: 600; text-anchor: middle; }
+
+.caption {
+  height: 52px;
+  text-align: center;
+  font-weight: 800;
+  font-size: clamp(17px, 5vw, 21px);
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-wrap: balance;
+  overflow: hidden;
+  transition: color .3s;
+}
+.caption.c-bad { color: var(--bad); } .caption.c-tack { color: var(--tack); } .caption.c-ok { color: var(--ok); }
+.caption.c-warn { color: var(--warn); } .caption.c-plain { color: var(--fg); }
+
+.code {
+  height: 150px;
+  background: #0b1018;
+  border: 1px solid #161e2a;
+  border-radius: 12px;
+  padding-block: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 21px;
+  overflow: hidden;
+}
+.code .ln { height: 21px; padding-inline: 12px; border-left: 2px solid transparent; white-space: pre; overflow: hidden; transition: background .3s, border-color .3s; }
+.code .ln.hl { background: rgba(96,165,250,.09); border-left-color: var(--tack); }
+.code .ln.bad { background: rgba(248,113,113,.09); border-left-color: var(--bad); }
+.code .ln.warn { background: rgba(251,191,36,.08); border-left-color: var(--warn); }
+.code .ln.ok { background: rgba(52,211,153,.08); border-left-color: var(--ok); }
+.k { color: #c792ea; } .s { color: #a5d6a7; } .c { color: #5c6880; font-style: italic; } .w { color: #f5c97a; font-weight: 600; }
+
+.scenes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.scenes button {
+  height: 26px; border-radius: 7px; border: 1px solid #1a2230; background: #0b1018; color: var(--dim);
+  font-family: var(--mono); font-size: 9px; cursor: pointer; padding: 0; white-space: nowrap; overflow: hidden;
+  transition: color .3s, border-color .3s, background .3s;
+}
+.scenes button.on { color: var(--fg); border-color: var(--tack); background: rgba(96,165,250,.1); }
+.scenes button:focus-visible { outline: 2px solid var(--tack); outline-offset: 2px; }
+.foot { text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--dim); line-height: 1.6; }
+.foot a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted #3a4660; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main class="card">
+  <h1>How tack works</h1>
+  <div class="scene-name" id="scene-name"></div>
+  <div class="pills">
+    <div class="pill plain" id="p-src"><span>source of truth</span><b id="p-src-v">Go</b></div>
+    <div class="pill plain" id="p-tools"><span>extra tools</span><b id="p-tools-v">0</b></div>
+    <div class="pill good" id="p-sync"><span>in sync</span><b id="p-sync-v">3/3</b></div>
+  </div>
+
+  <svg viewBox="0 0 400 340" role="img" aria-label="The same field rename shown across six approaches: which layers stay in sync and what reaches the frontend.">
+    <defs>
+      <filter id="pglow" x="-300%" y="-300%" width="700%" height="700%">
+        <feGaussianBlur stdDeviation="2.6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+    <path id="w-direct" class="wire" d="M80 184 C150 150, 250 100, 314 92"/>
+    <path id="w-copy-docs" class="wire dash" d="M200 26 V16 H372 Q388 16 388 32 V173 Q388 189 372 189 H358"/>
+    <path id="w-copy-ts" class="wire dash" d="M200 26 V16 H372 Q388 16 388 32 V272 Q388 288 372 288 H358"/>
+    <text id="t-copy" class="nsub" x="397" y="120" transform="rotate(90 397 120)">copied by hand</text>
+    <path id="w-src" class="wire" d="M200 64 V164"/>
+    <path id="w-client" class="wire" d="M80 190 H174"/>
+    <path id="w-handler" class="wire" d="M222 176 C260 140, 290 100, 314 92"/>
+    <path id="w-docs" class="wire" d="M226 190 H314"/>
+    <path id="w-ts" class="wire" d="M222 204 C260 240, 290 280, 314 288"/>
+    <path id="w-loop" class="wire" d="M316 292 C230 300, 70 306, 52 252"/>
+    <text id="t-loop" class="nsub" x="170" y="318">types the frontend imports</text>
+
+    <g class="n" id="n-src" style="--c: var(--struct)">
+      <rect class="icon" x="182" y="26" width="36" height="36" rx="8"/>
+      <text class="glyph" id="g-src" x="200" y="49" font-size="12">{ }</text>
+      <text class="nlabel" id="l-src" x="234" y="40" style="text-anchor:start">Go struct</text>
+      <text class="nsub" id="s-src" x="234" y="54" style="text-anchor:start">Pet { name }</text>
+    </g>
+
+    <g class="n" id="n-client" style="--c: var(--client)">
+      <rect class="icon" x="34" y="174" width="36" height="25" rx="4"/>
+      <path class="icon" d="M46 206 H58 M52 199 V206"/>
+      <text class="nlabel" x="52" y="230">frontend</text>
+      <text class="nsub" id="s-client" x="52" y="243">TypeScript</text>
+    </g>
+
+    <g class="n" id="n-hub" style="--c: var(--tack)">
+      <circle class="icon" cx="200" cy="190" r="23"/>
+      <path class="icon" d="M188 190 H200 M200 190 L211 181 M200 190 H212 M200 190 L211 199"/>
+      <circle cx="200" cy="190" r="3" id="hub-dot" fill="var(--tack)"/>
+      <text class="nlabel" id="l-hub" x="200" y="230">tack</text>
+      <text class="nsub" id="s-hub" x="200" y="243">net/http</text>
+    </g>
+
+    <g class="n" id="n-handler" style="--c: var(--out)">
+      <rect class="icon" x="318" y="74" width="36" height="34" rx="6"/>
+      <text class="glyph" x="336" y="95" font-size="11">fn</text>
+      <text class="nlabel" x="336" y="126">handler</text>
+      <text class="nsub" id="s-handler" x="336" y="139">reads name</text>
+      <text class="count" id="cnt" x="362" y="80">0</text>
+    </g>
+
+    <g class="n" id="n-docs" style="--c: var(--out)">
+      <path class="icon" d="M322 170 H344 L352 178 V208 H322 Z M344 170 V178 H352"/>
+      <path class="icon" d="M328 186 H346 M328 193 H346 M328 200 H340" stroke-width="1.6"/>
+      <text class="nlabel" x="336" y="228">/docs</text>
+      <text class="nsub" id="s-docs" x="336" y="241">name</text>
+    </g>
+
+    <g class="n" id="n-ts" style="--c: var(--out)">
+      <rect class="icon" x="318" y="270" width="36" height="36" rx="7"/>
+      <text class="glyph" x="336" y="293" font-size="12">TS</text>
+      <text class="nlabel" x="336" y="324">api.ts</text>
+      <text class="nsub" id="s-ts" x="336" y="337">name</text>
+    </g>
+
+    <g id="stop-docs" opacity="0">
+      <rect id="stop-docs-bg" x="222" y="156" width="96" height="18" rx="5" fill="#0b1018" stroke="var(--tool)"/>
+      <text id="stop-docs-t" class="stop-t" x="270" y="168" fill="var(--tool)">reads comments</text>
+    </g>
+    <g id="stop-ts" opacity="0">
+      <rect id="stop-ts-bg" x="210" y="247" width="112" height="18" rx="5" fill="#0b1018" stroke="var(--tool)"/>
+      <text id="stop-ts-t" class="stop-t" x="266" y="259" fill="var(--tool)">openapi-typescript</text>
+    </g>
+
+    <g id="chip" opacity="0">
+      <rect id="chip-bg" x="4" y="132" width="156" height="22" rx="6" fill="#1a0f12" stroke="var(--bad)"/>
+      <text id="chip-t" class="chip-t" x="82" y="147" fill="var(--bad)">undefined in prod</text>
+    </g>
+
+    <g id="pkts"></g>
+  </svg>
+
+  <div class="caption" id="caption"></div>
+  <div class="code" id="code" aria-live="polite"></div>
+  <div class="scenes" id="scenes" role="tablist" aria-label="Approaches"></div>
+  <div class="foot">Behaviour from each project's docs, Oct 2026:
+    <a href="https://github.com/swaggo/swag" target="_blank" rel="noopener">swag</a> ·
+    <a href="https://github.com/oapi-codegen/oapi-codegen" target="_blank" rel="noopener">oapi-codegen</a> ·
+    <a href="https://huma.rocks/features/" target="_blank" rel="noopener">Huma</a> ·
+    <a href="https://github.com/go-fuego/fuego" target="_blank" rel="noopener">Fuego</a> ·
+    <a href="https://encore.dev/docs/go/cli/client-generation" target="_blank" rel="noopener">Encore</a>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const NS = 'http://www.w3.org/2000/svg';
+  const COL = { client: '#2dd4bf', tack: '#60a5fa', tool: '#a3afc2', ok: '#34d399', bad: '#f87171', warn: '#fbbf24', struct: '#b4a3ff' };
+
+  /* Each approach: what the source is, what sits in the middle, and what happens
+     to each layer when you rename one field and edit only what you're forced to. */
+  const A = [
+    {
+      short: 'by hand', name: 'Hand-written', hub: null,
+      src: { glyph: '{ }', label: 'Go struct' }, srcPill: 'Go', tools: '0',
+      code: [
+        'type Pet struct {',
+        '  ¶ string `json:"§"`',
+        '}',
+        '// openapi.yaml → name   (edited by hand)',
+        '// api.ts       → name   (edited by hand)'
+      ], rename: 1, staleLines: [3, 4],
+      handler: 'fresh', docs: 'stale', ts: 'stale', front: 'runtime',
+      sync: ['1/3', 'bad'],
+      caption: ['Docs and types are copies. They go stale.', 'c-bad']
+    },
+    {
+      short: 'swaggo', name: 'Gin + swaggo',
+      hub: { label: 'swag init', sub: 'Swagger 2.0', tool: true }, tsHand: true,
+      src: { glyph: '//', label: 'Go + comments' }, srcPill: 'comments', tools: '1',
+      code: [
+        '// @Param  name  query  string  true  "pet"',
+        '// @Success 200 {object} Pet',
+        'func GetPet(c *gin.Context) {',
+        '  q := c.Query("§")',
+        '}',
+        '// $ swag init'
+      ], rename: 3, staleLines: [0],
+      docsStop: { text: 'reads comments', kind: 'tool' },
+      handler: 'fresh', docs: 'stale', ts: 'stale', front: 'runtime',
+      sync: ['1/3', 'bad'],
+      caption: ['Docs come from comments, not code. Comments drift.', 'c-bad']
+    },
+    {
+      short: 'oapi-codegen', name: 'oapi-codegen · spec-first',
+      hub: { label: 'oapi-codegen', sub: 'generates Go', tool: true },
+      src: { glyph: 'yml', label: 'openapi.yaml' }, srcPill: 'YAML', tools: '2',
+      code: [
+        'Pet:',
+        '  type: object',
+        '  properties:',
+        '    §:',
+        '      type: string',
+        '# $ oapi-codegen  &&  openapi-typescript'
+      ], rename: 3, okLines: [5],
+      tsStop: { text: 'openapi-typescript', kind: 'tool' },
+      handler: 'fix', docs: 'fresh', ts: 'fresh', front: 'build',
+      sync: ['3/3', 'good'],
+      caption: ['In sync, but you design in YAML and run two generators', 'c-plain']
+    },
+    {
+      short: 'Huma', name: 'Huma / Fuego · code-first',
+      hub: { label: 'Huma', sub: 'OpenAPI built in', tool: false },
+      src: { glyph: '{ }', label: 'Go struct' }, srcPill: 'Go', tools: '1+',
+      code: [
+        'type Pet struct {',
+        '  ¶ string `json:"§" maxLength:"50"`',
+        '}',
+        'huma.Post(api, "/pets", createPet)',
+        '// TS client: export spec, run your generator'
+      ], rename: 1, warnLines: [4],
+      tsStop: { text: 'your TS pipeline', kind: 'warn' },
+      handler: 'fresh', docs: 'fresh', ts: 'pending', front: 'stale',
+      sync: ['2/3', 'warn'],
+      caption: ['Docs follow the code. The TS client is up to your pipeline.', 'c-warn']
+    },
+    {
+      short: 'Encore', name: 'Encore',
+      hub: { label: 'Encore', sub: 'Encore CLI + runtime', tool: false },
+      src: { glyph: '{ }', label: 'Go + //encore:api' }, srcPill: 'Go + annot.', tools: '0',
+      code: [
+        '//encore:api public method=POST path=/pets',
+        'type Pet struct {',
+        '  ¶ string `json:"§"`',
+        '}',
+        '// $ encore gen client <app-id> --lang=typescript'
+      ], rename: 2, okLines: [4],
+      tsStop: { text: 'encore gen client', kind: 'built' },
+      handler: 'fresh', docs: 'fresh', ts: 'fresh', front: 'build',
+      sync: ['3/3', 'good'],
+      caption: ['All in sync, inside Encore\'s toolchain', 'c-ok']
+    },
+    {
+      short: 'tack', name: 'tack',
+      hub: { label: 'tack', sub: 'net/http · go build', tool: false },
+      src: { glyph: '{ }', label: 'Go struct' }, srcPill: 'Go', tools: '0',
+      code: [
+        'type Pet struct {',
+        '  ¶ string `json:"§" validate:"required"`',
+        '}',
+        'tack.Post(app, "/pets", createPet)',
+        '// $ tack gen ts    (CI fails if stale)'
+      ], rename: 1, okLines: [4],
+      tsStop: { text: 'tack gen ts', kind: 'built' },
+      handler: 'fresh', docs: 'fresh', ts: 'fresh', front: 'build',
+      sync: ['3/3', 'good'],
+      caption: ['All in sync, on plain net/http', 'c-tack']
+    }
+  ];
+
+  let run = 0;
+  class Cancelled extends Error {}
+  const wait = (ms, t) => new Promise((res, rej) => setTimeout(() => t === run ? res() : rej(new Cancelled()), reduce ? Math.min(ms, 250) : ms));
+
+  function packet(pathId, ms, color, t, { reverse = false, to = 1 } = {}) {
+    if (reduce) return Promise.resolve();
+    const path = $(pathId);
+    return new Promise((res, rej) => {
+      const dot = document.createElementNS(NS, 'circle');
+      dot.setAttribute('r', 3.4); dot.setAttribute('fill', color); dot.setAttribute('class', 'pkt');
+      $('pkts').appendChild(dot);
+      const len = path.getTotalLength();
+      const t0 = performance.now();
+      const step = now => {
+        if (t !== run) { dot.remove(); rej(new Cancelled()); return; }
+        const k = Math.min(1, (now - t0) / ms);
+        const e = (k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2) * to;
+        const p = path.getPointAtLength((reverse ? 1 - e : e) * len);
+        dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+        if (k < 1) requestAnimationFrame(step); else { dot.remove(); res(); }
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  const flash = (id, cls, ms = 650) => { $(id).classList.add(cls); setTimeout(() => $(id).classList.remove(cls), reduce ? 0 : ms); };
+  const show = (id, on) => $(id).classList.toggle('hide', !on);
+  const setText = (id, s) => { $(id).textContent = s; };
+  function pill(id, val, cls) { $(id + '-v').textContent = val; $(id).className = 'pill ' + cls; }
+  function caption(text, cls) { const c = $('caption'); c.textContent = text; c.className = 'caption ' + (cls || ''); }
+  function chip(text, kind) {
+    const colors = { bad: ['var(--bad)', '#1a0f12'], warn: ['var(--warn)', '#1a160b'], ok: ['var(--ok)', '#0b1a14'] }[kind];
+    $('chip-bg').setAttribute('stroke', colors[0]); $('chip-bg').setAttribute('fill', colors[1]);
+    $('chip-t').setAttribute('fill', colors[0]); $('chip-t').textContent = text;
+    $('chip').setAttribute('opacity', 1);
+  }
+  const hideChip = () => $('chip').setAttribute('opacity', 0);
+  function stop(which, cfg) {
+    const g = $('stop-' + which);
+    if (!cfg) { g.setAttribute('opacity', 0); return; }
+    const col = { tool: 'var(--tool)', warn: 'var(--warn)', built: 'var(--tack)' }[cfg.kind];
+    $('stop-' + which + '-bg').setAttribute('stroke', col);
+    if (cfg.kind === 'warn') $('stop-' + which + '-bg').setAttribute('stroke-dasharray', '3 3');
+    else $('stop-' + which + '-bg').removeAttribute('stroke-dasharray');
+    $('stop-' + which + '-t').setAttribute('fill', col);
+    $('stop-' + which + '-t').textContent = cfg.text;
+    g.setAttribute('opacity', 1);
+  }
+
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  function colour(raw, word) {
+    const cap = word ? word[0].toUpperCase() + word.slice(1) : '';
+    const marked = raw.replace('¶', '\u0001').replace('§', '\u0002');
+    let h = esc(marked);
+    const trimmed = h.replace(/^\s+/, '');
+    let out;
+    if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+      out = `<span class="c">${h}</span>`;
+    } else {
+      out = h.replace(/(`[^`]*`|"[^"]*")/g, '<span class="s">$1</span>')
+             .replace(/\b(type|struct|func|string|int)\b/g, '<span class="k">$1</span>');
+    }
+    return out.replace('\u0001', `<span class="w">${esc(cap)}</span>`).replace('\u0002', `<span class="w">${esc(word)}</span>`);
+  }
+  let cur = null;
+  function renderCode(word) {
+    const lines = cur.code.slice();
+    while (lines.length < 6) lines.push('');
+    $('code').innerHTML = lines.map((l, i) => `<div class="ln" id="ln-${i}">${l ? colour(l, word) : ' '}</div>`).join('');
+  }
+  function mark(i, cls) { const el = $('ln-' + i); if (el) { el.classList.remove('hl', 'bad', 'warn', 'ok'); el.classList.add(cls); } }
+  async function typeRename(t) {
+    const from = 'name', to = 'petName';
+    for (let i = from.length - 1; i >= 0; i--) { renderCode(from.slice(0, i)); mark(cur.rename, 'hl'); await wait(45, t); }
+    for (let i = 1; i <= to.length; i++) { renderCode(to.slice(0, i)); mark(cur.rename, 'hl'); await wait(55, t); }
+  }
+
+  let handled = 0;
+  const bump = () => { handled++; $('cnt').textContent = String(handled); flash('n-handler', 'okflash', 300); };
+  function layout(a) {
+    cur = a;
+    $('pkts').replaceChildren(); hideChip();
+    ['n-src', 'n-client', 'n-hub', 'n-handler', 'n-docs', 'n-ts'].forEach(id => $(id).classList.remove('stale', 'pending', 'fresh', 'flash', 'okflash', 'badflash', 'warnflash'));
+    $('scene-name').innerHTML = `${A.indexOf(a) + 1}/6 · <b>${esc(a.name)}</b> · same rename`;
+    setText('g-src', a.src.glyph); setText('l-src', a.src.label);
+    setText('s-src', 'Pet { name }');
+    setText('s-handler', 'reads name'); setText('s-docs', 'name'); setText('s-ts', 'name'); setText('s-client', 'TypeScript');
+    handled = 0; setText('cnt', '0');
+    pill('p-src', a.srcPill, 'plain'); pill('p-tools', a.tools, 'plain'); pill('p-sync', '3/3', 'good');
+    const hand = !a.hub;
+    show('w-direct', hand); show('w-copy-docs', hand); show('w-copy-ts', hand); show('t-copy', hand);
+    $('w-copy-docs').classList.remove('redline'); $('w-copy-ts').classList.remove('redline');
+    ['w-src', 'w-client', 'w-handler', 'w-docs', 'w-ts', 'w-loop', 't-loop', 'n-hub'].forEach(id => show(id, !hand));
+    if (a.hub) {
+      setText('l-hub', a.hub.label); setText('s-hub', a.hub.sub);
+      $('n-hub').style.setProperty('--c', a.hub.tool ? 'var(--tool)' : 'var(--tack)');
+      $('hub-dot').setAttribute('fill', a.hub.tool ? 'var(--tool)' : 'var(--tack)');
+      const glowCls = a.hub.tool ? 'toolglow' : 'glow';
+      ['w-src', 'w-handler', 'w-docs', 'w-ts', 'w-loop'].forEach(id => { $(id).classList.remove('glow', 'toolglow'); $(id).classList.add(glowCls); });
+    }
+    if (a.tsHand) { show('w-ts', false); show('w-copy-ts', true); show('t-copy', true); }
+    stop('docs', a.docsStop); stop('ts', a.tsStop);
+    renderCode('name');
+    caption('Rename one field', 'c-plain');
+  }
+
+  async function scene(a, t) {
+    layout(a);
+    await wait(500, t);
+    for (let i = 0; i < 2; i++) {
+      const go = a.hub
+        ? (async () => { await packet('w-client', 550, COL.client, t); await packet('w-handler', 550, COL.client, t); bump(); })()
+        : (async () => { await packet('w-direct', 900, COL.client, t); bump(); })();
+      go.catch(() => {});
+      await wait(380, t);
+    }
+    await wait(900, t);
+
+    await typeRename(t);
+    flash('n-src', 'flash', 700);
+    setText('s-src', 'Pet { petName }');
+    await wait(250, t);
+
+    const hubColor = a.hub && a.hub.tool ? COL.tool : COL.tack;
+    if (a.hub) await packet('w-src', 600, a.hub.tool ? COL.tool : COL.struct, t);
+
+    const handlerP = (async () => {
+      if (a.hub) await packet('w-handler', 650, hubColor, t);
+      if (a.handler === 'fix') {
+        flash('n-handler', 'warnflash', 900); setText('s-handler', 'compile error');
+        await wait(1000, t);
+        setText('s-handler', 'you fix it'); $('n-handler').classList.add('fresh');
+      } else {
+        $('n-handler').classList.add('fresh'); setText('s-handler', 'reads petName');
+      }
+    })();
+    const docsP = (async () => {
+      if (a.hub) await packet('w-docs', 650, hubColor, t);
+      if (a.docs === 'fresh') { $('n-docs').classList.add('fresh'); setText('s-docs', 'petName'); }
+      else { $('n-docs').classList.add('stale'); setText('s-docs', 'still: name'); $('w-copy-docs').classList.add('redline'); }
+    })();
+    const tsP = (async () => {
+      if (a.ts === 'pending') {
+        await packet('w-ts', 650, hubColor, t, { to: 0.5 });
+        $('n-ts').classList.add('pending'); setText('s-ts', 'not regenerated');
+      } else if (a.ts === 'fresh') {
+        await packet('w-ts', 900, hubColor, t);
+        $('n-ts').classList.add('fresh'); setText('s-ts', 'petName');
+      } else {
+        await wait(650, t);
+        $('n-ts').classList.add('stale'); setText('s-ts', 'still: name'); $('w-copy-ts').classList.add('redline');
+      }
+    })();
+
+    await Promise.all([handlerP, docsP, tsP]);
+    (a.staleLines || []).forEach(i => mark(i, 'bad'));
+    (a.warnLines || []).forEach(i => mark(i, 'warn'));
+    (a.okLines || []).forEach(i => mark(i, 'ok'));
+    pill('p-sync', a.sync[0], a.sync[1]);
+    caption(a.caption[0], a.caption[1]);
+    await wait(900, t);
+
+    if (a.front === 'runtime') {
+      const path = a.hub ? 'w-client' : 'w-direct';
+      await packet(path, 800, COL.client, t);
+      if (a.hub) await packet('w-handler', 500, COL.client, t);
+      flash('n-handler', 'badflash', 800);
+      if (a.hub) await packet('w-handler', 500, COL.bad, t, { reverse: true });
+      await packet(path, 800, COL.bad, t, { reverse: true });
+      flash('n-client', 'badflash', 1200);
+      chip('undefined in prod', 'bad');
+    } else if (a.front === 'stale') {
+      await packet('w-loop', 1100, COL.warn, t);
+      flash('n-client', 'warnflash', 1000);
+      chip('old types until it runs', 'warn');
+    } else {
+      await packet('w-loop', 1100, hubColor, t);
+      flash('n-client', 'warnflash', 1000);
+      chip("tsc: 'name' not found", 'warn');
+      await wait(1400, t);
+      chip('caught at build · fixed', 'ok');
+      flash('n-client', 'okflash', 800);
+      setText('s-client', 'fixed');
+    }
+    await wait(2800, t);
+  }
+
+  $('scenes').innerHTML = A.map((a, i) => `<button type="button" role="tab" id="sc-${i}" aria-label="${esc(a.name)}">${esc(a.short)}</button>`).join('');
+  A.forEach((_, i) => $('sc-' + i).addEventListener('click', () => start(i)));
+  const markScene = i => A.forEach((_, j) => { $('sc-' + j).classList.toggle('on', i === j); $('sc-' + j).setAttribute('aria-selected', i === j); });
+
+  async function start(from) {
+    const t = ++run;
+    let i = from;
+    try {
+      while (t === run) { markScene(i); await scene(A[i], t); i = (i + 1) % A.length; }
+    } catch (e) { if (!(e instanceof Cancelled)) throw e; }
+  }
+  start(0);
+})();
+</script>
+
+</body></html>

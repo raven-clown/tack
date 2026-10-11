@@ -119,6 +119,10 @@ Declare a route with `{id}` in the path but no matching `path:"id"` field? tack 
 
 ## How it compares
 
+<p align="center"><img src=".github/assets/how-tack-works.gif" width="460" alt="The same field rename across six approaches: by hand, swaggo, oapi-codegen, Huma, Encore, and tack"></p>
+
+<p align="center"><sub>The same field rename, six approaches. The TypeScript client shown for tack arrives in v0.4. Source: <a href=".github/assets/how-tack-works.html">how-tack-works.html</a>.</sub></p>
+
 | | net/http only | Gin / Echo / Fiber | **tack** |
 | --- | --- | --- | --- |
 | Typed handlers | ❌ | ❌ | ✅ |
@@ -135,10 +139,23 @@ tack is inspired by [FastAPI](https://fastapi.tiangolo.com/), and shares goals w
 | --- | --- | --- |
 | v0.1 | Core: typed handlers, binding, validation, errors | ✅ Done |
 | v0.2 | OpenAPI 3.1 + `/docs` | ✅ Done |
-| v0.3 | Groups, middleware, security schemes | Planned |
-| v0.4 | TypeScript client generation | Planned |
-| v0.5 | File upload, SSE streaming, CLI | Planned |
-| v1.0 | Stable API, docs site | Planned |
+| v0.3 | Route groups, middleware, auth schemes in `/docs` | Planned |
+| v0.4 | TypeScript client with typed errors and Zod schemas from `validate` tags; `tack check` fails CI when the client is stale | Planned |
+| v0.5 | File uploads, SSE, `tack new`, `tack dev` (regenerate the client on save), `tack mock`, graceful shutdown | Planned |
+| v1.0 | Stable API, docs site, real-world examples | Planned |
+
+Add-ons, each in its own module:
+
+| Version | Add-on | What it does |
+| --- | --- | --- |
+| v1.1 | `tackdb` (PostgreSQL) | Maps database errors to 404/409, a transaction per request, `/health` checks the database |
+| v1.1 | `tack new --db postgres --cache redis` | A project with PostgreSQL, Redis, sqlc, migrations, and docker-compose that runs with one command |
+| v1.2 | `tackcache` (Redis) | `tack.Cache(5*time.Minute)` on a route caches responses in Redis, and `/docs` shows it |
+| v1.2 | Pagination | `tack.Page[Pet]` once, reflected in `/docs` and the TypeScript client |
+| v1.2 | `tacktest` | Tests with a typed client instead of hand-written JSON |
+| v1.3 | `tack diff` | Flags breaking API changes in pull requests |
+| v1.3 | `tackotel` | OpenTelemetry tracing for every request |
+| v1.4 | `tackmcp` | Exposes existing routes as MCP tools |
 
 ## Documentation
 

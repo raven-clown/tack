@@ -44,6 +44,8 @@ register http.HandlerFunc on ServeMux                 ▼
 
 **Rule:** if code under `REQUEST TIME` calls `reflect.TypeOf`, walks struct fields, or parses struct tags, it is a bug.
 
+The one accepted exception is `go-playground/validator`, which walks the input value on each request (with its own cached struct metadata). tack skips it entirely for inputs without `validate` tags.
+
 ## Package layout
 
 ```text

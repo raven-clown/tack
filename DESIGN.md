@@ -219,7 +219,14 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Pointer parameters (v0.2) | Optional, never `null` in the schema | Query, header, and cookie values are absent or present; they can't be null |
 | Turning off spec or docs (v0.2) | `SpecPath` or `DocsPath` set to `"-"` | An empty string keeps the useful default |
 | When the spec is built (v0.2) | At route registration, then encoded once and cached | Unsupported types fail at startup, not on the first spec request |
-| Docs page (v0.2) | Scalar at a pinned version, with its hosted extras turned off | A predictable page with no third-party features beyond rendering the spec |
+| Docs page (v0.2) | Scalar at a pinned version with a Subresource Integrity hash, and its hosted extras turned off | A predictable page with no third-party features beyond rendering the spec |
+| Request body content type (v0.2) | A `Content-Type` that is not JSON gets 415; a missing one is accepted | Stops cross-site `text/plain` posts from reaching JSON handlers without breaking simple clients |
+| `null` body (v0.2) | Treated as a missing body: 422 when required, nil when the Body field is a pointer | `null` should not slip past "body is required" as a zero value |
+| Slice elements with rules (v0.2) | Registration panics unless the field has `validate:"dive"` | validator skips element rules without `dive`, while the spec would still advertise them |
+| Error list size (v0.2) | At most 50 details, then "and N more errors" | Bounds the response for large invalid inputs |
+| Repeated header values (v0.2) | Slice headers accept repeated lines and comma-separated values | Matches the default OpenAPI header style |
+| Domain error detail (v0.2) | Only the message of the error that implements `HTTPStatus()` reaches the client | Wrapped context such as hostnames stays in logs |
+| Nil slices and maps (known limitation) | Encoded as `null` by encoding/json, while the schema says array or object | Return empty values from handlers; revisit when encoding/json/v2 encodes nil slices as `[]` |
 
 ## Prototype
 
