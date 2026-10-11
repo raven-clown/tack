@@ -1,0 +1,3 @@
+# golang.org/x/crypto/openpgp is reported as unmaintained with no fixed version.
+# tack and the research modules never import it; it arrives transitively through x/crypto.
+GO-2026-5932
