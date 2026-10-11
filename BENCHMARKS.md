@@ -34,7 +34,7 @@ Go 1.27, Windows, one core, 8 runs, median shown. v0.6.2 is `main` before the re
 
 On Go 1.27 `encoding/json` copies a non-addressable value before encoding it, which is the second allocation the bound route had on this machine and not on Go 1.26. Encoding through a pointer removes it on both.
 
-`TestAllocations` in `bench_test.go` holds each shape to its allocation budget, so a regression fails the build.
+`TestAllocations` in `bench_test.go` holds each shape to its allocation budget, so a regression fails the build. CI runs it in a step of its own without `-race`, since the race detector allocates on its own.
 
 ## What changed
 
