@@ -1,6 +1,6 @@
 # tack
 
-**Type-safe HTTP APIs for Go with docs that never drift from your code. Declare a struct once — get validation, OpenAPI docs, and a TypeScript client for free.**
+**Type-safe HTTP APIs for Go with docs that never drift from your code. Declare a struct once and get validation, OpenAPI docs, and a TypeScript client for free.**
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/raven-clown/tack.svg)](https://pkg.go.dev/github.com/raven-clown/tack)
 [![CI](https://github.com/raven-clown/tack/actions/workflows/ci.yml/badge.svg)](https://github.com/raven-clown/tack/actions/workflows/ci.yml)
@@ -18,8 +18,8 @@
 Writing an API in Go usually means doing the same work three times:
 
 1. Parse and validate the request by hand.
-2. Write the OpenAPI spec (or comments that generate it) separately — and watch it drift out of date.
-3. Write TypeScript types for the frontend — again by hand.
+2. Write the OpenAPI spec (or comments that generate it) separately, and watch it drift out of date.
+3. Write TypeScript types for the frontend, again by hand.
 
 tack makes **your Go types the single source of truth**. You write a handler that takes a struct and returns a struct. tack does the rest.
 
@@ -61,7 +61,7 @@ That's it. You now have:
 - **Automatic binding** from path, query, header, cookie, and JSON body
 - **Validation** with clear, field-level error messages
 - **Standard errors** in [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` format
-- **OpenAPI 3.1** at `/openapi.json` — always in sync with your code
+- **OpenAPI 3.1** at `/openapi.json`, always in sync with your code
 - **Interactive docs** at `/docs`, including the auth schemes you declare
 - **Typed errors** declared per route and listed in the docs by code
 - **TypeScript client** generated from the same types, where the errors a route declares form a typed union
@@ -99,7 +99,7 @@ Change the paths with `Config.SpecPath` and `Config.DocsPath`, or set either to 
 
 ### Validation errors that make sense
 
-Send a bad request and get every problem at once — not just the first one:
+Send a bad request and get every problem at once, not just the first one:
 
 ```json
 {
@@ -305,7 +305,7 @@ All reflection happens **once**, when routes are registered. At request time tac
 
 ### Mistakes caught at startup
 
-Declare a route with `{id}` in the path but no matching `path:"id"` field? tack panics at registration with a message telling you exactly what to fix — not at 3 a.m. in production.
+Declare a route with `{id}` in the path but no matching `path:"id"` field? tack panics at registration with a message telling you exactly what to fix, not at 3 a.m. in production.
 
 ## How it compares
 
@@ -343,7 +343,7 @@ If you know of a project that already covers all of this, please open an issue.
 
 ## Roadmap
 
-As of v0.5 the parts that set tack apart are all in place; the public launch follows.
+As of v0.5 the parts that set tack apart are all in place. The public launch is planned for v0.9, the release candidate, so the two-week feedback window doubles as the launch.
 
 | Version | Focus | Status |
 | --- | --- | --- |
@@ -378,11 +378,13 @@ Every push and pull request runs:
 
 | Check | What it does |
 | --- | --- |
-| Unit tests | Table-driven tests, `Example` tests for every public function, and golden files for generated JSON Schema and OpenAPI; run with `-race` on the two most recent Go releases |
+| Unit tests | Table-driven tests, `Example` tests for every public function, golden files for generated JSON Schema and OpenAPI, the README's Go blocks compiled against the checkout, and `goleak` on the stream, server, and `tack dev` tests; run with `-race` on the two most recent Go releases |
+| Fuzzing | Six fuzz targets for the query scanner, JSON and form binding, header lists, and path patterns, 20 seconds each |
+| Allocations | `TestAllocations` holds each request shape to its allocation budget (see BENCHMARKS.md) |
 | Coverage | Fails below 85% total coverage; the report is in the job summary |
 | Lint | golangci-lint with the config in `.golangci.yml` |
 | govulncheck | Known vulnerabilities reachable from tack's code |
-| gosec | Static analysis for common Go security mistakes |
+| gosec | Static analysis for common Go security mistakes, in CI and in golangci-lint; the command is scanned separately without the rules a CLI cannot satisfy |
 | Trivy | Dependencies, leaked secrets, and misconfiguration across the repository |
 | CodeQL | Semantic code analysis |
 | Generated clients | openapi-generator validates the petstore spec and builds Go and TypeScript clients from it |
@@ -402,8 +404,8 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run && go r
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md) — how tack works inside
-- [Examples](examples/) — runnable example projects
+- [Architecture](ARCHITECTURE.md): how tack works inside
+- [Examples](examples/): runnable example projects
 - [API reference](https://pkg.go.dev/github.com/raven-clown/tack)
 
 ## Contributing

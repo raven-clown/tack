@@ -194,9 +194,9 @@ In every option, unknown errors become a 500 with no details sent to the client 
 | `header:"X-Request-ID"` | Request header | Canonicalized |
 | `cookie:"session"` | Cookie | |
 | `Body` field | JSON body | See D2 |
-| `validate:"..."` | — | `go-playground/validator/v10` rules |
-| `default:"10"` | — | Applied when the value is absent |
-| `doc:"..."`, `example:"..."` | — | OpenAPI only (v0.2) |
+| `validate:"..."` | none | `go-playground/validator/v10` rules |
+| `default:"10"` | none | Applied when the value is absent |
+| `doc:"..."`, `example:"..."` | none | OpenAPI only (v0.2) |
 
 **Defaults**
 
@@ -417,6 +417,9 @@ Decided on 2026-10-11. The options marked "chosen" above were accepted as writte
 | Pooled inputs and encoders (v0.6.1) | One `sync.Pool` of the input struct per route and one of JSON encoders app-wide; the handler gets a copy of the input | Binding needs a pointer, which would otherwise heap-allocate every request; a copy keeps handlers free of aliasing rules |
 | Compiled checks (v0.6.2) | Simple rules on scalar parameters compile to comparisons at registration; anything else keeps the validator, and a test holds both to the same messages | The validator's reflective walk was a third of a bound route's cost, and most parameters only need min, max, required, or oneof; falling back rather than reimplementing the validator keeps every rule working |
 | Shared `Content-Type` slice (v0.6.2) | The header value is one shared slice with length equal to capacity | `Header().Set` canonicalizes the key and allocates on every response; a full slice is safe to share because `Add` must copy it |
+| Module weight (v0.6.3) | `kin-openapi` and `chi` stay in `go.mod` as test-only requirements; the command stays in the root module | Neither is imported outside `_test.go` files, so a program importing `tack` links only `go-playground/validator` and its dependencies; a separate module for `cmd/tack` would need its own tags and a `replace` during development for nothing |
+| gosec on the command (v0.6.3) | The Security workflow scans `cmd/` in its own run with the path, permission, subprocess, and request rules excluded; the library run excludes `cmd/`; golangci-lint mirrors the split | A command that reads, writes, and runs what its arguments name cannot satisfy those rules without lying; excluding them repo-wide would hide real findings in the library |
+| Fuzz targets (v0.6.3) | Fuzz tests for the query scanner, JSON and form binding, header lists, and path patterns, each run for 20 seconds in CI | They hold the scanners to their contracts (`url.ParseQuery` for queries, a bind `Error` with a 4xx status for bodies) on inputs no table test would list |
 
 ## Prototype
 

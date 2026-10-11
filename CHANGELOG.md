@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-11
+
+A hardening release: no public API changes.
+
+### Fixed
+
+- Compiled validate checks now agree with the validator in every case a review found: a non-nil pointer counts as present whatever it points to (`*bool` false with `required` passes, `*int` zero with `omitempty,gte=1` fails), bounds are parsed the way the validator parses them (`float32` at 32 bits, integers as `int64`, `oneof` options compared as the validator spells the value), `required` or `omitempty` after another rule keeps the validator's order, and a rule on the `Body` field or on a `json:"-"` field no longer vanishes: such inputs run the validator.
+- A `validate` rule the validator does not know inside a body struct panics at registration with the route and the rule, instead of on the first request.
+- `form` fields on a GET or DELETE route, which `net/http` never reads, are refused at registration.
+- A stream handler behind a `ResponseWriter` that cannot flush gets a 500 instead of a silent empty 200; the message names the `Unwrap` method the middleware needs. A stream item that only embeds or points to `tack.Event` is rejected at registration instead of panicking.
+- A response body that cannot be encoded sends the 500 problem without the handler's headers, and with `Config.Dev` a success `Status` the route does not document logs a warning.
+- `App.Serve` returns nil, as documented, when the caller shuts the server down itself.
+- A pointer field with `validate:"required"` is no longer documented as nullable in the OpenAPI document, the TypeScript client, or the Zod schemas, since the server rejects `null`.
+- `tsgen` refuses a component schema named like a global the client relies on (`Response`, `Error`, `Headers`, `Blob`, `FormData`, `Promise`, `Record`, and the rest), with the fix, instead of generating a file that does not type-check.
+- Zod date-time schemas accept offsets (`.datetime({ offset: true })`), which Go writes for non-UTC times; regenerate `schemas.ts`.
+- `tack mock` reports a path `ServeMux` cannot register, such as `/files/{name}.json`, instead of crashing; its preflight answer allows the headers the browser asked for, so `Authorization` works; example sizes from `minLength` and `minItems` are capped. The schema decoder tolerates a `null` entry in `anyOf`.
+- `tack dev` kills the whole process tree of the command after `--`, so a server started through `go run` no longer survives a restart and holds the port; a file that disappears between the directory listing and the stat no longer ends the loop; `tack gen ts -h` prints the usage.
+- The CodeQL finding in `examples/auth`: the demo password comes from `AUTH_PASSWORD` with a documented default and is no longer logged.
+
+### Changed
+
+- Request bodies are read into pooled buffers and results are encoded through a pooled pointer, so the encoder no longer copies every result; problem responses use the same pool and a shared `Content-Type` value. On the machine that measured it, a bound route went from 2 allocations to 1, a JSON body route from 5 to 2, and a validation error from 10 to 8; see BENCHMARKS.md. `TestAllocations` holds each shape to its budget.
+- The compiled checks live in `internal/bind` next to the plan; `cmd/tack` has one file per subcommand. The public API is unchanged.
+- Security scanning: the Security workflow runs gosec on the library and on `cmd/` separately, excluding for the command only the path, permission, subprocess, and request rules a CLI cannot satisfy; golangci-lint runs gosec with the same split; the two findings in the library are annotated with their reasons. Scorecard's open items are the ones a one-day-old single-maintainer project cannot close yet.
+- Tests: six fuzz targets (query scanner against `url.ParseQuery`, JSON and form binding, header lists, path patterns, OpenAPI path helpers) run for 20 seconds each in CI; the README's Go blocks are compiled against the checkout; `goleak` guards the stream, server, and `tack dev` tests.
+- `API_REVIEW.md` lists every exported identifier with a verdict for the v0.9 release candidate. Nothing changes in this release.
+
 ## [0.6.2] - 2026-10-11
 
 ### Changed
@@ -139,7 +166,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/raven-clown/tack/compare/v0.6.1...v0.6.3
 [0.6.2]: https://github.com/raven-clown/tack/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/raven-clown/tack/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/raven-clown/tack/compare/v0.5.0...v0.6.0
