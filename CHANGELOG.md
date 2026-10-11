@@ -6,12 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-11
+
+The release candidate for v1.0 and the public launch. The public API in this release is the API v1.0 freezes, unless feedback during the two-week window (until 2026-10-25) shows a reason to change it. Every exported identifier was reviewed and kept (API_REVIEW.md); the three open questions are decided in DESIGN.md D11; MIGRATION.md has the before and after code for the one breaking change.
+
 ### Breaking
 
 - The `ShutdownTimeout` constant is replaced by `Config.ShutdownTimeout`, whose zero value keeps the ten seconds (DESIGN.md D11.1). Migration: delete references to `tack.ShutdownTimeout`, or set `tack.Config{ShutdownTimeout: 10 * time.Second}` where the value was read.
 
+### Security
+
+- Every response tack writes (JSON, problems, the document, the docs page, and event streams) now carries `X-Content-Type-Options: nosniff`; the docs page also sends `Referrer-Policy: no-referrer`. The shared header values cost no allocation.
+
 ### Added
 
+- `bench/`, its own module: the same pet API on net/http, Gin, Echo, Huma, and tack with one harness, an equivalence test that proves every variant enforces the same rules, and `bench/run.sh` to rerun it. Results, including every case where tack is slower, are in BENCHMARKS.md.
+- `SECURITY.md` gains a "Defaults" section: body limits, content types, hidden internal errors, panics, headers, the timeouts `Run` sets, shutdown, docs exposure, and what CI scans.
 - `FUTURE_FIT.md` and `internal/futurefit`: the planned add-ons (API versioning, typed pagination, WebSocket, tackdb, tackcache, tackauth) written against the v0.9 API as compiling, running sketches. All six fit without changing an exported identifier; the extension points they would like are listed as additive (DESIGN.md D12).
 
 ## [0.6.3] - 2026-10-11
@@ -174,7 +184,8 @@ Template for each release:
 - Security fixes.
 -->
 
-[Unreleased]: https://github.com/raven-clown/tack/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/raven-clown/tack/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/raven-clown/tack/compare/v0.6.3...v0.9.0
 [0.6.3]: https://github.com/raven-clown/tack/compare/v0.6.1...v0.6.3
 [0.6.2]: https://github.com/raven-clown/tack/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/raven-clown/tack/compare/v0.6.0...v0.6.1

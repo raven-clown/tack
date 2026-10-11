@@ -57,4 +57,14 @@ Write all of it in plain prose: no emoji, no em dashes, short sentences.
 | `stream.go`, `server.go` | `Stream`/`Event` for server-sent events; `Run`/`Serve` with graceful shutdown |
 | `cmd/tack` | CLI: `gen ts`, `gen zod`, `check`, `dev`, `mock`, `new`, `version`; project template under `template/` |
 | `examples/` | Runnable apps; `petstore` commits its generated client |
+| `bench/` | Own module: the same API on net/http, Gin, Echo, Huma, and tack; `run.sh` reruns, results in BENCHMARKS.md |
+| `internal/futurefit` | Compile-checked sketches of the planned add-ons; FUTURE_FIT.md explains them |
 | `research/` | Measured comparison with other frameworks; do not edit casually |
+
+## Status and plan (keep current)
+
+- Latest release: v0.9.0 (2026-10-11), the release candidate and the public launch. v0.1 to v0.9.0 all shipped the same day.
+- v0.9.0: every `API_REVIEW.md` verdict is keep; the three open questions are decided in DESIGN.md D11 (`Config.ShutdownTimeout` replaces the constant, `Error.Type` stays a field, `Stream[T]` stays a named type). `FUTURE_FIT.md` shows the six planned add-ons fit without API changes; the extension points they would like are additive (D12). `bench/` measures net/http, Gin, Echo, Huma, and tack on the same routes; SECURITY.md has a Defaults section; every response is `nosniff`. Breaking changes are in MIGRATION.md. Launch drafts: `launch/launch-v0.9.md`.
+- Low findings still open from v0.6.3 (mock 405 vs 404, `required` on zero-valued scalars, Zod string lengths in UTF-16 units) and the slow paths BENCHMARKS.md names (a body validation error runs the validator and allocates most) are candidates for the RC window or v1.0.
+- Next: the two-week RC feedback window (until 2026-10-25). Fix what feedback shows; then v1.0 freezes the API. After v1.0 only additive changes until v2; the add-ons in FUTURE_FIT.md come as separate modules, starting with tackdb.
+- Local machine: Go 1.27.2 without cgo, so `-race` runs in CI only; Node 22 is installed.
