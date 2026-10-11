@@ -36,6 +36,7 @@ linters:
       - path: _test\.go
         linters:
           - unparam
+          - noctx
 
 formatters:
   enable:

@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Project setup: CI, linting, license, contributor guides.
+- `New`, `Config`, and `App`, an `http.Handler` built on `http.ServeMux`.
+- Typed routes: `Get`, `Post`, `Put`, `Patch`, `Delete` with inferred input and output types, and the `Status` route option.
+- Binding from `path`, `query`, `header`, and `cookie` tags and a JSON `Body` field, with `default` values. Supports strings, bools, all integer and float types, `time.Time`, `encoding.TextUnmarshaler`, pointers for optional values, and slices for repeated query and header values.
+- Validation with `go-playground/validator/v10`, reporting every failing field at once.
+- RFC 9457 `application/problem+json` errors: `Error`, `ErrorDetail`, `NewError`, and the `HTTPStatus() int` convention for domain errors. Request bodies are limited to 1 MiB by default.
+- Route registration panics with the route, field, and fix when an input struct does not match its path.
+- `examples/petstore` and `BENCHMARKS.md`.
 
 <!--
 Template for each release:

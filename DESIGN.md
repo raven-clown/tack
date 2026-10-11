@@ -204,7 +204,7 @@ In every option, unknown errors become a 500 with no details sent to the client 
 - Pointer fields (`*int`) are optional and keep "absent" distinct from the zero value.
 - Non-path values are required only when `validate:"required"` says so. A single rule, the validator, drives both the 422 responses and the OpenAPI `required` list.
 
-**Untagged exported fields** in an input struct panic at registration, naming the route, the field, and the fix ("add a `query`, `path`, `header`, or `cookie` tag, or name it `Body`"). Unexported fields and fields tagged `-` are ignored.
+**Untagged exported fields** in an input struct panic at registration, naming the route, the field, and the fix ("add a `query`, `path`, `header`, or `cookie` tag, or name it `Body`"). Unexported fields and fields tagged `json:"-"` are ignored.
 
 ## Decisions
 
