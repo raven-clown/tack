@@ -4,16 +4,18 @@
 // Usage:
 //
 //	tack gen ts -spec <file|url|-> [-o api.ts]
-//	tack check -spec <file|url|-> api.ts
+//	tack gen zod -spec <file|url|-> [-o schemas.ts]
+//	tack check -spec <file|url|-> [-zod] api.ts
 //
-// gen ts writes the client for the document to -o, or to standard output.
-// check exits with status 1 when the file differs from what the document
-// generates, so CI fails when the client is older than the routes. The
-// document is read from a file, fetched from a URL such as
+// gen ts writes the client for the document to -o, or to standard output;
+// gen zod writes Zod schemas with the server's validation rules. check exits
+// with status 1 when the file differs from what the document generates, so
+// CI fails when the client is older than the routes; -zod compares a schemas
+// file. The document is read from a file, fetched from a URL such as
 // http://localhost:8080/openapi.json, or read from standard input with "-".
 //
-// An app can also check its client in a test with tsgen.Check, with no
-// running server or exported document.
+// An app can also check its files in a test with tsgen.Check and
+// tsgen.CheckZod, with no running server or exported document.
 package main
 
 import (
@@ -40,8 +42,9 @@ func main() {
 
 func usage(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  tack gen ts -spec <file|url|-> [-o api.ts]   Write the TypeScript client
-  tack check -spec <file|url|-> api.ts         Exit 1 when the client is stale
+  tack gen ts -spec <file|url|-> [-o api.ts]        Write the TypeScript client
+  tack gen zod -spec <file|url|-> [-o schemas.ts]   Write Zod schemas with the validation rules
+  tack check -spec <file|url|-> [-zod] api.ts       Exit 1 when the file is stale
 
 The OpenAPI document is read from a file, a URL such as
 http://localhost:8080/openapi.json, or standard input with "-".
@@ -85,11 +88,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 var errUsage = errors.New("usage")
 
+// generators maps a gen target to its generator and check.
+var generators = map[string]struct {
+	generate func(*openapi.Document) ([]byte, error)
+	check    func(*openapi.Document, string) error
+}{
+	"ts":  {tsgen.Generate, tsgen.Check},
+	"zod": {tsgen.GenerateZod, tsgen.CheckZod},
+}
+
 func gen(args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) == 0 || args[0] != "ts" {
-		return fmt.Errorf("%w: gen needs a target; the only one is ts", errUsage)
+	if len(args) == 0 {
+		return fmt.Errorf("%w: gen needs a target: ts or zod", errUsage)
 	}
-	fs := flag.NewFlagSet("tack gen ts", flag.ContinueOnError)
+	target, ok := generators[args[0]]
+	if !ok {
+		return fmt.Errorf("%w: unknown target %q; use ts or zod", errUsage, args[0])
+	}
+	fs := flag.NewFlagSet("tack gen "+args[0], flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	spec := fs.String("spec", "", "OpenAPI document: a file, a URL, or - for standard input")
 	out := fs.String("o", "", "output file (default standard output)")
@@ -103,7 +119,7 @@ func gen(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	ts, err := tsgen.Generate(doc)
+	ts, err := target.generate(doc)
 	if err != nil {
 		return err
 	}
@@ -121,17 +137,22 @@ func check(args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("tack check", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	spec := fs.String("spec", "", "OpenAPI document: a file, a URL, or - for standard input")
+	zod := fs.Bool("zod", false, "the file holds Zod schemas (tack gen zod) rather than the client")
 	if err := fs.Parse(args); err != nil {
 		return wrapFlag(err)
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("%w: check needs the client file to compare", errUsage)
+		return fmt.Errorf("%w: check needs the file to compare", errUsage)
 	}
 	doc, err := loadSpec(*spec, stdin)
 	if err != nil {
 		return err
 	}
-	if err := tsgen.Check(doc, fs.Arg(0)); err != nil {
+	target := generators["ts"]
+	if *zod {
+		target = generators["zod"]
+	}
+	if err := target.check(doc, fs.Arg(0)); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "%s is up to date\n", fs.Arg(0))

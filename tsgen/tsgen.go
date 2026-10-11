@@ -61,14 +61,18 @@ func Generate(doc *openapi.Document) ([]byte, error) {
 //		}
 //	}
 func Check(doc *openapi.Document, path string) error {
-	want, err := Generate(doc)
+	return check(path, func() ([]byte, error) { return Generate(doc) }, "tsgen.Generate or `tack gen ts`")
+}
+
+func check(path string, generate func() ([]byte, error), how string) error {
+	want, err := generate()
 	if err != nil {
 		return err
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%w: %s does not exist; generate it with tsgen.Generate or `tack gen ts`", ErrStale, path)
+			return fmt.Errorf("%w: %s does not exist; generate it with %s", ErrStale, path, how)
 		}
 		return fmt.Errorf("tsgen: %w", err)
 	}
@@ -76,7 +80,7 @@ func Check(doc *openapi.Document, path string) error {
 	if bytes.Equal(got, want) {
 		return nil
 	}
-	return fmt.Errorf("%w: %s differs from the document at line %d; regenerate it with tsgen.Generate or `tack gen ts`", ErrStale, path, firstDiff(got, want))
+	return fmt.Errorf("%w: %s differs from the document at line %d; regenerate it with %s", ErrStale, path, firstDiff(got, want), how)
 }
 
 // firstDiff returns the 1-based number of the first line where a and b differ.

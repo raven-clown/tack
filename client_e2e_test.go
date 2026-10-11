@@ -150,6 +150,28 @@ try {
 console.log(JSON.stringify(out));
 `
 
+// e2eZodScript validates data with the generated schemas; its output is
+// compared with e2eZodWant.
+const e2eZodScript = `import { PostPetsInput, GetPetsInput, PetNotFoundProblem } from "./schemas.js";
+
+const out: Record<string, unknown> = {};
+out.valid = PostPetsInput.safeParse({ body: { id: 1, name: "Milo", tags: ["a"] } }).success;
+const invalid = PostPetsInput.safeParse({ body: { id: "1", tags: "a" } });
+out.invalidPaths = invalid.success ? [] : invalid.error.issues.map((i) => i.path.join(".")).sort();
+out.defaults = GetPetsInput.parse({});
+out.problem = PetNotFoundProblem.safeParse({ type: "about:blank", title: "Not Found", status: 404, code: "pet_not_found" }).success;
+out.otherCode = PetNotFoundProblem.safeParse({ type: "about:blank", title: "Not Found", status: 404, code: "internal" }).success;
+console.log(JSON.stringify(out));
+`
+
+const e2eZodWant = `{
+  "valid": true,
+  "invalidPaths": ["body.id", "body.name", "body.tags"],
+  "defaults": {"limit": 10},
+  "problem": true,
+  "otherCode": false
+}`
+
 const e2eWant = `{
   "list": {"status": 200, "data": [{"id": 5, "name": "a+b", "tags": ["default"]}]},
   "traced": ["override"],
@@ -210,16 +232,62 @@ func TestClientEndToEnd(t *testing.T) {
 		t.Fatalf("node: %v\n%s", err, out)
 	}
 
-	var got, want any
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("node output is not JSON: %v\n%s", err, out)
+	compareJSON(t, "client results", out, e2eWant)
+
+	// The Zod schemas need the zod package; skip that half when npm cannot
+	// install it here, except in CI where it must work.
+	npm, err := exec.LookPath("npm")
+	if err != nil {
+		t.Log("npm not on PATH; skipping the Zod check")
+		return
 	}
-	if err := json.Unmarshal([]byte(e2eWant), &want); err != nil {
+	install := exec.Command(npm, "install", "--no-audit", "--no-fund", "--silent", "zod@4")
+	install.Dir = dir
+	if out, err := install.CombinedOutput(); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("npm install zod: %v\n%s", err, out)
+		}
+		t.Logf("npm install zod failed, skipping the Zod check: %v\n%s", err, out)
+		return
+	}
+	schemas, err := tsgen.GenerateZod(app.OpenAPI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"schemas.ts":    string(schemas),
+		"zod.ts":        e2eZodScript,
+		"tsconfig.json": `{"compilerOptions": {"strict": true, "noUnusedLocals": true, "target": "es2022", "module": "nodenext", "lib": ["es2022", "dom"], "skipLibCheck": true}, "files": ["schemas.ts", "zod.ts"]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compile = exec.Command(tsc, "-p", dir)
+	compile.Dir = dir
+	if out, err := compile.CombinedOutput(); err != nil {
+		t.Fatalf("tsc (zod): %v\n%s", err, out)
+	}
+	run = exec.Command(node, filepath.Join(dir, "zod.js"))
+	out, err = run.CombinedOutput()
+	if err != nil {
+		t.Fatalf("node (zod): %v\n%s", err, out)
+	}
+	compareJSON(t, "zod results", out, e2eZodWant)
+}
+
+func compareJSON(t *testing.T, what string, gotRaw []byte, wantRaw string) {
+	t.Helper()
+	var got, want any
+	if err := json.Unmarshal(gotRaw, &got); err != nil {
+		t.Fatalf("%s: node output is not JSON: %v\n%s", what, err, gotRaw)
+	}
+	if err := json.Unmarshal([]byte(wantRaw), &want); err != nil {
 		t.Fatal(err)
 	}
 	gotJSON, _ := json.MarshalIndent(got, "", "  ")
 	wantJSON, _ := json.MarshalIndent(want, "", "  ")
 	if string(gotJSON) != string(wantJSON) {
-		t.Errorf("client results differ\ngot:\n%s\nwant:\n%s", gotJSON, wantJSON)
+		t.Errorf("%s differ\ngot:\n%s\nwant:\n%s", what, gotJSON, wantJSON)
 	}
 }
