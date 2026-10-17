@@ -157,7 +157,7 @@ func (d *devLoop) stop() {
 	}
 	_ = killTree(d.proc.Process)
 	if d.exited != nil {
-		_ = <-d.exited // killed on purpose, so the exit error carries nothing
+		d.logf("app stopped (%v)", exitReason(<-d.exited))
 		d.exited = nil
 	}
 	d.proc = nil

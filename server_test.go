@@ -161,5 +161,7 @@ func TestShutdownTimeout(t *testing.T) {
 		t.Errorf("shutdown took %s with a 50ms ShutdownTimeout", took)
 	}
 	close(release)
-	_ = <-got // the request was cut by the shutdown; only the goroutine's exit matters
+	if err := <-got; err != nil {
+		t.Logf("blocked request ended with %v", err)
+	}
 }
