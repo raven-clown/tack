@@ -157,7 +157,7 @@ func (d *devLoop) stop() {
 	}
 	_ = killTree(d.proc.Process)
 	if d.exited != nil {
-		<-d.exited
+		_ = <-d.exited // killed on purpose, so the exit error carries nothing
 		d.exited = nil
 	}
 	d.proc = nil
