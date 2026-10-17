@@ -1,0 +1,9 @@
+{
+  "name": "tack-tools",
+  "private": true,
+  "description": "Pinned Node tools used by CI to type-check generated clients.",
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "zod": "4.6.5"
+  }
+}
